@@ -1,0 +1,25 @@
+# CMake and build output
+/build/
+/cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Generated MLIR/TableGen output
+*.inc
+*.inc.d
+
+# Test and tool caches
+.lit_test_times.txt
+__pycache__/
+*.py[cod]
+
+# macOS and editor metadata
+.DS_Store
+.vscode/
+.idea/
