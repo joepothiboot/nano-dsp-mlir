@@ -57,14 +57,14 @@ Six IR levels, each with a stated invariant. Full diagram:
                                                           └────────────────────┘
 ```
 
-| Level | Dialects | Invariant |
-|---|---|---|
-| L0 | Python AST subset | static shapes, f32 only, no control flow |
-| L1 | `dsp` | value semantics, whole-array ops, no loops |
-| L2 | `linalg` on tensors | destination-passing style, explicit affine maps |
-| L3 | `linalg`/`scf`/`vector` on tensors | schedule already applied, still no memory |
-| L4 | `memref`, `scf`, `vector` | aliasing resolved, allocations explicit |
-| L5 | `llvm` | native vector widths, no `memref` left |
+| Level | Dialects                           | Invariant                                       |
+| ----- | ---------------------------------- | ----------------------------------------------- |
+| L0    | Python AST subset                  | static shapes, f32 only, no control flow        |
+| L1    | `dsp`                              | value semantics, whole-array ops, no loops      |
+| L2    | `linalg` on tensors                | destination-passing style, explicit affine maps |
+| L3    | `linalg`/`scf`/`vector` on tensors | schedule already applied, still no memory       |
+| L4    | `memref`, `scf`, `vector`          | aliasing resolved, allocations explicit         |
+| L5    | `llvm`                             | native vector widths, no `memref` left          |
 
 Full contracts: [`docs/01-ir-contracts.md`](docs/01-ir-contracts.md).
 
@@ -76,8 +76,8 @@ Two judgment calls drive the whole project; both are argued in full in
 [`docs/00-architecture.md`](docs/00-architecture.md).
 
 **1. Transform dialect (policy) + C++ (mechanism), not one or the other.**
-C++ owns what the compiler *can* do (`dsp → linalg` conversion — no upstream
-op exists for that). The Transform dialect owns what it *chose* to do (tile
+C++ owns what the compiler _can_ do (`dsp → linalg` conversion — no upstream
+op exists for that). The Transform dialect owns what it _chose_ to do (tile
 sizes, fusion, vectorization) as a checked-in `.mlir` schedule file. One flag
 (`-nanodsp-optimize`) runs a generated default; `-schedule-file=...` swaps in
 a hand-tuned one, same code path.
@@ -164,14 +164,14 @@ sweep described above are planned (Stages 3 and 5) and not implemented yet.
 
 ## Project status
 
-| Stage | Scope | Status |
-|---|---|---|
-| 1 | Architecture + judgment calls | done |
-| 2 | `dsp` dialect + lowering to `linalg.generic` | done |
-| 3 | Tiling + vectorization (Transform dialect schedule) | not started |
-| 4 | Bufferization + `linalg → scf → vector → LLVM` | done (upstream passes, see `test/Integration/end-to-end.mlir`) |
-| 5 | Benchmark harness | not started |
-| 6 | (planned) DSL frontend polish, autotuning sweep write-up | not started |
+| Stage | Scope                                                    | Status                                                         |
+| ----- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| 1     | Architecture + judgment calls                            | done                                                           |
+| 2     | `dsp` dialect + lowering to `linalg.generic`             | done                                                           |
+| 3     | Tiling + vectorization (Transform dialect schedule)      | not started                                                    |
+| 4     | Bufferization + `linalg → scf → vector → LLVM`           | done (upstream passes, see `test/Integration/end-to-end.mlir`) |
+| 5     | Benchmark harness                                        | not started                                                    |
+| 6     | (planned) DSL frontend polish, autotuning sweep write-up | not started                                                    |
 
 ---
 
