@@ -96,23 +96,20 @@ model-vs-measured is the highest-value artifact in the repo
 
 ```
 nano-dsp-mlir/
-├── docs/                     # architecture, tiling model derivation, results, this diagram
 ├── include/nanodsp/
 │   ├── Dialect/DSP/IR/       # dsp.{add,relu,matmul,conv2d} — ODS + verifiers
-│   ├── Conversion/DSPToLinalg/  # dsp -> linalg.generic lowering
-│   ├── Schedule/             # TargetModel, TileSizeModel, transform schedule builder
-│   └── Pipeline/             # the canonical pass pipeline
+│   └── Conversion/DSPToLinalg/  # dsp -> linalg.generic lowering
 ├── lib/                      # .cpp for everything above
-├── frontend/nanodsp/         # Python DSL -> textual MLIR emitter
-├── schedules/                # checked-in transform-dialect schedules (data, not code)
 ├── tools/nanodsp-opt/        # the compiler CLI (mlir-opt clone + our dialect/passes)
 ├── test/
 │   ├── Dialect/DSP/          # op parsing, verification, canonicalization
 │   ├── Conversion/DSPToLinalg/  # lowering structure (FileCheck)
-│   ├── Schedule/             # generated-schedule + tiled-structure tests
-│   └── Integration/          # DIFFERENTIAL tests: optimized vs. unoptimized output
-└── benchmark/                # harness, baselines, tile-size sweep, plots
+│   └── Integration/          # end-to-end execution via mlir-runner
+└── test.sh                   # configure + build + run check-nanodsp
 ```
+
+Planned, not yet in the repo: `Schedule/` (TargetModel, TileSizeModel),
+`schedules/` (transform-dialect schedules), `frontend/`, `benchmark/`, `docs/`.
 
 ---
 
@@ -155,30 +152,13 @@ execution via `mlir-runner`).
 ```bash
 build/bin/nanodsp-opt input.mlir \
   -convert-dsp-to-linalg \
-  -nanodsp-optimize="target=avx2" \
   -one-shot-bufferize="bufferize-function-boundaries" \
   -convert-linalg-to-loops -convert-vector-to-llvm -convert-func-to-llvm \
   -reconcile-unrealized-casts
 ```
 
-Inspect the generated schedule before it runs (the debug loop the transform
-dialect enables):
-
-```bash
-build/bin/nanodsp-opt input.mlir -nanodsp-annotate-kinds \
-  -nanodsp-apply-schedule="target=avx2 dump-schedule-only=true" -o /dev/null
-```
-
-### Benchmark
-
-```bash
-python benchmark/sweep.py --op matmul --sizes 64,128,256,512,1024
-python benchmark/plot.py results.csv
-```
-
-See [`docs/03-results.md`](docs/03-results.md) for methodology (warmup,
-alignment, variance handling) and actual numbers once measured on target
-hardware.
+The `-nanodsp-optimize` / `-nanodsp-apply-schedule` passes and the benchmark
+sweep described above are planned (Stages 3 and 5) and not implemented yet.
 
 ---
 
@@ -188,9 +168,9 @@ hardware.
 |---|---|---|
 | 1 | Architecture + judgment calls | done |
 | 2 | `dsp` dialect + lowering to `linalg.generic` | done |
-| 3 | Tiling + vectorization (Transform dialect schedule) | done |
-| 4 | Bufferization + `linalg → scf → vector → LLVM` | done |
-| 5 | Benchmark harness | harness done; numbers pending a real run |
+| 3 | Tiling + vectorization (Transform dialect schedule) | not started |
+| 4 | Bufferization + `linalg → scf → vector → LLVM` | done (upstream passes, see `test/Integration/end-to-end.mlir`) |
+| 5 | Benchmark harness | not started |
 | 6 | (planned) DSL frontend polish, autotuning sweep write-up | not started |
 
 ---

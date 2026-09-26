@@ -11,7 +11,6 @@ target_link_libraries(nanodsp-opt PRIVATE
   ${extension_libs}
   NanoDSPDialect
   NanoDSPConversionDSPToLinalg
-  NanoDSPPipeline
   MLIRRegisterAllDialects
   MLIRRegisterAllPasses
   MLIROptLib
