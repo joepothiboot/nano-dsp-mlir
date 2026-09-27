@@ -105,11 +105,27 @@ nano-dsp-mlir/
 │   ├── Dialect/DSP/          # op parsing, verification, canonicalization
 │   ├── Conversion/DSPToLinalg/  # lowering structure (FileCheck)
 │   └── Integration/          # end-to-end execution via mlir-runner
+├── mojo/
+│   ├── nanodsp/              # Mojo package: Tensor[dtype] + SIMD kernels for the same four ops
+│   └── tests/                # golden + differential tests
+├── reference/                # scalar C++ oracle (header-only) + golden-value test
+├── benchmarks/               # kernel throughput (MLIR/C++ side-by-side planned)
+├── docs/                     # design notes
+├── pixi.toml                 # Mojo toolchain + task runner
 └── test.sh                   # configure + build + run check-nanodsp
 ```
 
 Planned, not yet in the repo: `Schedule/` (TargetModel, TileSizeModel),
-`schedules/` (transform-dialect schedules), `frontend/`, `benchmark/`, `docs/`.
+`schedules/` (transform-dialect schedules), `frontend/`.
+
+### Three implementations, one set of numbers
+
+Every `dsp` op exists three times: lowered through MLIR, as a SIMD Mojo
+kernel (`mojo/nanodsp/`), and as a plain scalar C++ loop nest
+(`reference/`). All three are tested against the same golden values (the ones
+in `test/Integration/`), and the Mojo kernels are also checked against a naive
+loop nest on odd sizes so every SIMD tail path runs. See
+[`docs/mojo-kernels.md`](docs/mojo-kernels.md).
 
 ---
 
@@ -160,6 +176,16 @@ build/bin/nanodsp-opt input.mlir \
 The `-nanodsp-optimize` / `-nanodsp-apply-schedule` passes and the benchmark
 sweep described above are planned (Stages 3 and 5) and not implemented yet.
 
+### Mojo kernels and C++ reference
+
+The Mojo toolchain (pinned to 1.1) is installed through [pixi](https://pixi.sh):
+
+```bash
+pixi run test-mojo       # golden + differential tests for the Mojo kernels
+pixi run test-reference  # golden tests for the C++ reference
+pixi run bench           # Mojo kernel throughput
+```
+
 ---
 
 ## Project status
@@ -170,12 +196,17 @@ sweep described above are planned (Stages 3 and 5) and not implemented yet.
 | 2     | `dsp` dialect + lowering to `linalg.generic`             | done                                                           |
 | 3     | Tiling + vectorization (Transform dialect schedule)      | not started                                                    |
 | 4     | Bufferization + `linalg → scf → vector → LLVM`           | done (upstream passes, see `test/Integration/end-to-end.mlir`) |
-| 5     | Benchmark harness                                        | not started                                                    |
+| 5     | Benchmark harness                                        | started: Mojo kernels only (`benchmarks/`)                     |
+| M     | Mojo kernel library + C++ reference oracle               | done (`mojo/`, `reference/`; Mojo 1.1)                         |
 | 6     | (planned) DSL frontend polish, autotuning sweep write-up | not started                                                    |
 
 ---
 
 ## Docs index
+
+Only `mojo-kernels.md` exists so far; the rest are planned.
+
+- [`docs/mojo-kernels.md`](docs/mojo-kernels.md) — the Mojo library: design, SIMD strategy, how it's tested
 
 - [`docs/00-architecture.md`](docs/00-architecture.md) — full Stage 1 plan and both judgment-call tradeoffs
 - [`docs/01-ir-contracts.md`](docs/01-ir-contracts.md) — the L0–L5 invariant table

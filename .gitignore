@@ -23,3 +23,5 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+# Pixi environment
+.pixi/

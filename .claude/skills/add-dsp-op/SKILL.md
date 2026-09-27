@@ -16,4 +16,11 @@ Rough steps — follow the existing ops (e.g. `dsp.matmul`) as the template:
    - `test/Dialect/DSP/` — round-trip in `ops.mlir`, bad shapes in `invalid.mlir`
    - `test/Conversion/DSPToLinalg/<op>.mlir` — FileCheck the generic's maps/iterators
    - `test/Integration/DSPToLinalg/<op>.mlir` — run and check numeric output
-5. Run the `build-and-test` skill.
+5. **Mirror** it outside MLIR, reusing the integration test's golden values:
+   - Mojo kernel in `mojo/nanodsp/kernels.mojo` (export it from
+     `__init__.mojo`), with golden, differential (odd sizes, so the SIMD tail
+     runs) and error-path tests in `mojo/tests/test_kernels.mojo`
+   - scalar version in `reference/nanodsp_ref.h` plus a golden check in
+     `reference/test_reference.cpp`
+6. Run the `build-and-test` skill, then `pixi run test-mojo` and
+   `pixi run test-reference`.

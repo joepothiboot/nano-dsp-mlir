@@ -1,0 +1,13 @@
+[workspace]
+name = "nano-dsp-mlir"
+channels = ["https://conda.modular.com/max", "conda-forge"]
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
+
+[dependencies]
+mojo = "1.1.*"
+
+[tasks]
+test-mojo = "mojo run -I mojo mojo/tests/test_kernels.mojo"
+bench = "mojo run -I mojo benchmarks/bench_kernels.mojo"
+test-reference = { cmd = "mkdir -p build && c++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -o build/test_reference reference/test_reference.cpp && build/test_reference" }
+test-mlir = "./test.sh"
