@@ -9,7 +9,7 @@ config.test_format = lit.formats.ShTest(execute_external=False)
 config.suffixes = [".mlir"]
 config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(config.nanodsp_obj_root, "test")
-config.excludes = ["CMakeLists.txt", "lit.cfg.py", "lit.site.cfg.py.in"]
+config.excludes = ["CMakeLists.txt", "Inputs", "lit.cfg.py", "lit.site.cfg.py.in"]
 
 llvm_config.with_system_environment(["HOME", "INCLUDE", "LIB", "TMP", "TEMP"])
 llvm_config.use_default_substitutions()
@@ -58,5 +58,5 @@ config.substitutions.append((
 ))
 
 tool_dirs = [config.nanodsp_tools_dir, config.llvm_tools_dir]
-tools = ["nanodsp-opt", "mlir-opt", "mlir-runner"]
+tools = ["nanodsp-opt", "mlir-opt", "mlir-runner", "mlir-translate", "llc"]
 llvm_config.add_tool_substitutions(tools, tool_dirs)

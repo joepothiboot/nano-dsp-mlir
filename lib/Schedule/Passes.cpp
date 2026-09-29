@@ -3,6 +3,7 @@
 #include "nanodsp/Schedule/Passes.h"
 #include "nanodsp/Schedule/ScheduleGen.h"
 #include "nanodsp/Schedule/TargetModel.h"
+#include "nanodsp/Schedule/TileSizeModel.h"
 
 #include "mlir/Dialect/Linalg/TransformOps/DialectExtension.h"
 #include "mlir/Dialect/Transform/IR/TransformOps.h"
@@ -86,6 +87,24 @@ struct NanoDSPOptimizePass
   }
 };
 
+/// Records the model's decision on each op, so tools and tests can read it
+/// without re-deriving it from the schedule.
+void annotateTileSizes(ArrayRef<linalg::GenericOp> ops,
+                       const TargetModel &target) {
+  for (linalg::GenericOp op : ops) {
+    FailureOr<TileSizes> sizes = computeTileSizes(op, target);
+    if (failed(sizes))
+      continue;
+    Builder b(op.getContext());
+    op->setAttr("nanodsp.loop_ranges",
+                b.getDenseI64ArrayAttr(sizes->loopRanges));
+    op->setAttr("nanodsp.cache_tile", b.getDenseI64ArrayAttr(sizes->cache));
+    op->setAttr("nanodsp.reg_tile", b.getDenseI64ArrayAttr(sizes->reg));
+    op->setAttr("nanodsp.working_set_bytes",
+                b.getI64IntegerAttr(sizes->cacheWorkingSetBytes));
+  }
+}
+
 struct NanoDSPEmitSchedulePass
     : public mlir::nanodsp::impl::NanoDSPEmitScheduleBase<
           NanoDSPEmitSchedulePass> {
@@ -104,6 +123,7 @@ struct NanoDSPEmitSchedulePass
       return signalPassFailure();
 
     SmallVector<linalg::GenericOp> ops = tagScheduleTargets(module);
+    annotateTileSizes(ops, *target);
     OwningOpRef<ModuleOp> schedule = parseSourceString<ModuleOp>(
         buildDefaultSchedule(ops, *target), ParserConfig(&getContext()),
         "nanodsp-schedule");

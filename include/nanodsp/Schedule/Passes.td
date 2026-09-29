@@ -46,6 +46,10 @@ def NanoDSPEmitSchedule : Pass<"nanodsp-emit-schedule", "::mlir::ModuleOp"> {
     `module attributes {transform.with_named_sequence}`, so it can be read,
     checked in under `schedules/`, edited, and applied with either
     `-transform-interpreter` or `-nanodsp-optimize{schedule-file=...}`.
+
+    Each op also records the model's decision as `nanodsp.loop_ranges`,
+    `nanodsp.cache_tile`, `nanodsp.reg_tile` (absolute extents per loop) and
+    `nanodsp.working_set_bytes`.
   }];
 
   let options = [

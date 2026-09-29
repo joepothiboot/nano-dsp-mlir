@@ -105,18 +105,24 @@ std::string mlir::nanodsp::buildDefaultSchedule(ArrayRef<linalg::GenericOp> ops,
     handle =
         emitTile(os, handle, (tag + "_reg").str(), regSizes, innermostLoop);
 
-    // The vectorizer needs projected-permutation indexing maps. A conv's
-    // input map (oh + kh, ow + kw) only becomes one once the unit dims of the
-    // register tile are folded away, which happens below for all ops at once.
-    bool needsUnitDimFolding =
-        llvm::any_of(op.getIndexingMapsArray(), [](AffineMap map) {
-          return !map.isProjectedPermutation();
+    // Register tiles are vectorized only after their unit dims are folded
+    // away (below, for all ops at once):
+    //  * a matmul tile is m x n x 1; vectorized as is, the trailing unit
+    //    dim survives as vector<4x16x1xf32>, which LLVM lowers to scalar
+    //    multiplies. Folded, it is a clean 2-D multiply-add.
+    //  * a conv's input map (oh + kh, ow + kw) is not a projected
+    //    permutation, which the vectorizer rejects, until kh and kw are gone.
+    // An op that got no loops has no unit dims to fold and no loop to find
+    // it through afterwards, so it is vectorized right away if it can be.
+    bool projectedPermutations =
+        llvm::all_of(op.getIndexingMapsArray(), [](AffineMap map) {
+          return map.isProjectedPermutation();
         });
-    if (!needsUnitDimFolding) {
+    if (!innermostLoop.empty()) {
+      deferred.push_back({tag.str(), innermostLoop});
+    } else if (projectedPermutations) {
       os << "    transform.structured.vectorize %" << handle
          << " : !transform.any_op\n";
-    } else if (!innermostLoop.empty()) {
-      deferred.push_back({tag.str(), innermostLoop});
     } else {
       os << "    // " << tag << ": untiled, left scalar\n";
     }

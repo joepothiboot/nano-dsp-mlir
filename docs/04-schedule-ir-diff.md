@@ -38,7 +38,13 @@ nanodsp-opt matmul.mlir -convert-dsp-to-linalg -nanodsp-emit-schedule=target=x86
 %tiled, %loops = transform.structured.tile_using_for %0 tile_sizes [0, 0, 48]
 // Register tile: 4 rows x 16 columns (2 AVX2 vectors), one k at a time.
 %tiled_0, %loops_1:3 = transform.structured.tile_using_for %tiled tile_sizes [4, 16, 1]
-transform.structured.vectorize %tiled_0
+// Drop the tile's unit k dim, find the 2-D op again, vectorize it.
+transform.apply_patterns to %funcs {
+  transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
+  transform.apply_patterns.canonicalization
+}
+%5 = transform.structured.match ops{["linalg.generic"]} in %loops_1#2
+transform.structured.vectorize %5
 ```
 
 The model wanted a 24-wide register tile (3 vectors). 32 has no divisor that
@@ -56,14 +62,13 @@ nanodsp-opt matmul.mlir -convert-dsp-to-linalg -nanodsp-optimize=target=x86-avx2
   %4 = scf.for %m = %c0 to %c16 step %c4 iter_args(%acc1 = %acc0) {      // reg: rows
     %5 = scf.for %n = %c0 to %c32 step %c16 iter_args(%acc2 = %acc1) {   // reg: cols
       %6 = scf.for %k = %c0 to %c48 step %c1 iter_args(%acc3 = %acc2) {  // reg: k
-        // A column (4x1) and B row (1x16) broadcast to 4x16x1, C tile 4x16.
-        %7  = vector.transfer_read %a_col[...] : tensor<4x1xf32>, vector<4x16x1xf32>
-        %8  = vector.transfer_read %b_row[...] : tensor<1x16xf32>, vector<4x16x1xf32>
-        %9  = vector.transfer_read %c_tile[...] : tensor<4x16xf32>, vector<4x16xf32>
-        %10 = arith.mulf %7, %8 : vector<4x16x1xf32>
-        %11 = vector.shape_cast %10 : vector<4x16x1xf32> to vector<4x16xf32>
-        %12 = arith.addf %9, %11 : vector<4x16xf32>
-        %13 = vector.transfer_write %12, %c_tile[...] : vector<4x16xf32>, tensor<4x16xf32>
+        // A column (4) broadcast across n, B row (16) broadcast across m.
+        %7  = vector.transfer_read %a_col[%c0] : tensor<4xf32>, vector<4x16xf32>
+        %8  = vector.transfer_read %b_row[%c0] : tensor<16xf32>, vector<4x16xf32>
+        %9  = vector.transfer_read %c_tile[%c0, %c0] : tensor<4x16xf32>, vector<4x16xf32>
+        %10 = arith.mulf %7, %8 : vector<4x16xf32>
+        %11 = arith.addf %9, %10 : vector<4x16xf32>
+        %12 = vector.transfer_write %11, %c_tile[%c0, %c0] : vector<4x16xf32>, tensor<4x16xf32>
         ...
 ```
 
@@ -72,6 +77,11 @@ Things to notice:
 - **No `vector.contract`.** With a reduction tile of 1 the vectorizer emits a
   plain `mulf` and `addf`. A contraction would lower to FMA and change
   rounding.
+- **No unit dims.** Vectorizing the `4×16×1` tile directly gives
+  `vector<4x16x1xf32>`. LLVM lowers that trailing 1 to scalar multiplies
+  (`vmulss` on x86), so the schedule folds unit dims away first.
+  `test/Schedule/codegen.mlir` checks the machine code: 16 `fmul.4s` on NEON,
+  12 `vmulps` on AVX2, no scalar multiplies, no FMA.
 - **Still on tensors.** L3 has no memory yet. `-nanodsp-lower-to-llvm`
   bufferizes and lowers the rest of the way.
 - **The accumulator round-trips every `k`.** The C tile is read and written
@@ -79,12 +89,11 @@ Things to notice:
   (`transform.structured.hoist_redundant_vector_transfers`, after
   bufferization) is the obvious next optimization. It isn't done yet.
 
-## Conv needs one extra step
+## Conv needs the fold too
 
 A conv's input map `(n, oh + kh, ow + kw, c)` isn't a projected permutation,
-so the vectorizer rejects it even when `oh`, `kh` and `kw` all have extent 1
-in the register tile. The schedule first applies
-`fold_unit_extent_dims_via_slices`, which leaves a 2-D `(ow, f)` generic. It
-then re-finds that op through the innermost loop handle, because the rewrite
-drops the `nanodsp.tag` attribute, and vectorizes it into a `4×8` multiply-add.
-See `test/Schedule/optimize.mlir`.
+so the vectorizer rejects the op even when `oh`, `kh` and `kw` all have
+extent 1 in the register tile. The same unit-dim fold leaves a 2-D `(ow, f)`
+generic, which vectorizes into a `4×8` multiply-add. The fold replaces the op
+and drops its `nanodsp.tag`, so every tile is found again through its
+innermost loop handle. See `test/Schedule/optimize.mlir`.

@@ -38,9 +38,13 @@ so partial sums round. It prints every output as its raw 32-bit pattern and
 `diff`s four runs against each other: unscheduled, the `host-neon` schedule,
 the `x86-avx2` schedule, and the hand-written `schedules/matmul-8x12-neon.mlir`.
 
-A test like this only means something if it can fail. Swapping in a schedule
-that really reassociates (`transform.structured.split_reduction` with 4
-partial sums) changes 2,503 of the printed values.
+A test like this only means something if it can fail, so the same test also
+runs a negative control: `Inputs/split-reduction.mlir` really reassociates
+(4 partial sums over `k`), and the test requires its output to differ. It
+changes 2,503 of the printed values.
+
+`test/Schedule/codegen.mlir` covers the last step: the machine code for both
+targets contains vector multiplies and adds and no FMA instruction.
 
 ## What isn't covered
 

@@ -15,6 +15,8 @@ set(NANODSP_TEST_DEPENDS
   nanodsp-opt
   mlir-opt
   mlir-runner
+  mlir-translate
+  llc
   mlir_runner_utils
   mlir_c_runner_utils
 )

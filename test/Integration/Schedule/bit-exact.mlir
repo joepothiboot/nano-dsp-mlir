@@ -2,7 +2,8 @@
 // the result. Every output is printed as raw f32 bit patterns (buffer
 // addresses stripped), so a reassociated or FMA-contracted accumulation shows
 // up as a diff. Checked against both generated schedules and the hand-written
-// one in schedules/.
+// one in schedules/, plus a negative control (Inputs/split-reduction.mlir)
+// that reassociates and must differ.
 //
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg \
 // RUN: | mlir-opt %stock_lower_to_llvm \
@@ -25,9 +26,17 @@
 // RUN: | mlir-runner -e main --entry-point-result=void \
 // RUN:     --shared-libs=%mlir_runner_utils --shared-libs=%mlir_c_runner_utils \
 // RUN: | sed -e "s/base@ = 0x[0-9a-f]*//" > %t.hand
+// RUN: nanodsp-opt %s -convert-dsp-to-linalg \
+// RUN:     -nanodsp-optimize=schedule-file=%S/Inputs/split-reduction.mlir \
+// RUN:     -nanodsp-lower-to-llvm \
+// RUN: | mlir-runner -e main --entry-point-result=void \
+// RUN:     --shared-libs=%mlir_runner_utils --shared-libs=%mlir_c_runner_utils \
+// RUN: | sed -e "s/base@ = 0x[0-9a-f]*//" > %t.split
 // RUN: diff %t.ref %t.neon
 // RUN: diff %t.ref %t.avx2
 // RUN: diff %t.ref %t.hand
+// Negative control: a reassociating schedule must be caught.
+// RUN: not diff %t.ref %t.split > /dev/null
 // RUN: FileCheck %s < %t.ref
 
 func.func private @printMemrefI32(%ptr : tensor<*xi32>)
