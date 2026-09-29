@@ -1,4 +1,5 @@
 import os
+import re
 
 import lit.formats
 from lit.llvm import llvm_config
@@ -12,6 +13,16 @@ config.excludes = ["CMakeLists.txt", "lit.cfg.py", "lit.site.cfg.py.in"]
 
 llvm_config.with_system_environment(["HOME", "INCLUDE", "LIB", "TMP", "TEMP"])
 llvm_config.use_default_substitutions()
+
+# lit neither quotes nor lets us un-resolve %s, so a checkout under a path with
+# whitespace breaks every RUN line. test.sh passes a whitespace-free symlink to
+# the same directory; rewrite the resolved path back to it after %s expands.
+real_source_dir = os.path.realpath(config.test_source_root)
+if config.nanodsp_lit_source_dir != real_source_dir and any(
+        c.isspace() for c in real_source_dir):
+    config.recursiveExpansionLimit = 10
+    config.substitutions.append(
+        (re.escape(real_source_dir), config.nanodsp_lit_source_dir))
 
 shlibext = config.llvm_shlib_ext
 config.substitutions.append(

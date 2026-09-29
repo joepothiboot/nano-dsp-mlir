@@ -28,7 +28,10 @@ ops. See `README.md` for the full pitch and roadmap.
 ./test.sh   # configure + build + check-nanodsp (auto-detects Homebrew LLVM)
 ```
 
-Targets LLVM/MLIR 20.1.x. Build output goes to `build/` (gitignored).
+Targets LLVM/MLIR 21+ (tested on Homebrew 23.1.1); use `Op::create(builder,
+...)`, not the deprecated `builder.create<Op>(...)`. Build output goes to
+`build/` (gitignored). `test.sh` works around lit's unquoted paths when the
+checkout lives under a directory containing spaces.
 
 ```bash
 pixi run test-mojo       # Mojo kernel tests (installs Mojo 1.1 via pixi)

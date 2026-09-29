@@ -136,9 +136,13 @@ loop nest on odd sizes so every SIMD tail path runs. See
 Pin the exact revision. MLIR's transform-dialect and pass APIs change a lot
 between releases.
 
+LLVM/MLIR 21 or newer is required (the code uses the `Op::create(builder, ...)`
+API); CI and local development use 23.1.1. On macOS, `brew install llvm` is
+enough and `./test.sh` finds it automatically. Otherwise build from source:
+
 ```bash
-# LLVM/MLIR 20.1.x, built with -DLLVM_ENABLE_PROJECTS="mlir"
-git clone --branch llvmorg-20.1.0 https://github.com/llvm/llvm-project
+# built with -DLLVM_ENABLE_PROJECTS="mlir"
+git clone --branch llvmorg-23.1.1 https://github.com/llvm/llvm-project
 ```
 
 You'll need `MLIR_DIR` pointing at the install, plus `lit` and `FileCheck` on

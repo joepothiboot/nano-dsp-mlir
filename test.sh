@@ -13,6 +13,16 @@ SCRIPT_PATH="${BASH_SOURCE[0]}"
 ROOT_DIR="${SCRIPT_PATH%/*}"
 [[ "${ROOT_DIR}" == "${SCRIPT_PATH}" ]] && ROOT_DIR="."
 ROOT_DIR="$(cd "${ROOT_DIR}" && pwd)"
+
+# lit does not quote paths in RUN lines, so a checkout under a directory with
+# whitespace (e.g. "ml compiler/") fails every test with "command not found".
+# Build and test through a whitespace-free symlink instead.
+if [[ "${ROOT_DIR}" =~ [[:space:]] ]]; then
+  LINK_DIR="${HOME}/.cache/nano-dsp-mlir"
+  mkdir -p "${LINK_DIR}"
+  ln -sfn "${ROOT_DIR}" "${LINK_DIR}/src"
+  ROOT_DIR="${LINK_DIR}/src"
+fi
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build}"
 
 if [[ -z "${MLIR_DIR:-}" ]]; then
@@ -46,6 +56,7 @@ fi
 cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" -G Ninja \
   -DMLIR_DIR="${MLIR_DIR}" \
   ${TABLEGEN_EXE:+-DMLIR_TABLEGEN_EXE="${TABLEGEN_EXE}"} \
+  -DNANODSP_LIT_SOURCE_DIR="${ROOT_DIR}/test" \
   ${LIT_EXE:+-DLLVM_EXTERNAL_LIT="${LIT_EXE}"}
 
 cmake --build "${BUILD_DIR}" --target check-nanodsp

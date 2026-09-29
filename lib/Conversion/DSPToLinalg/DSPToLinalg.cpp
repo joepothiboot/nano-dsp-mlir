@@ -40,8 +40,8 @@ using namespace mlir::nanodsp;
 /// result is written unconditionally (true for elementwise ops).
 static Value createEmptyDest(OpBuilder &b, Location loc,
                              RankedTensorType type) {
-  return b.create<tensor::EmptyOp>(loc, type.getShape(),
-                                   type.getElementType());
+  return tensor::EmptyOp::create(b, loc, type.getShape(),
+                                 type.getElementType());
 }
 
 /// A zero-initialized destination tensor. Required for reductions, where the
@@ -49,9 +49,9 @@ static Value createEmptyDest(OpBuilder &b, Location loc,
 static Value createZeroDest(OpBuilder &b, Location loc,
                             RankedTensorType type) {
   Value empty = createEmptyDest(b, loc, type);
-  Value zero = b.create<arith::ConstantOp>(
-      loc, b.getZeroAttr(type.getElementType()));
-  return b.create<linalg::FillOp>(loc, ValueRange{zero}, ValueRange{empty})
+  Value zero =
+      arith::ConstantOp::create(b, loc, b.getZeroAttr(type.getElementType()));
+  return linalg::FillOp::create(b, loc, ValueRange{zero}, ValueRange{empty})
       .getResult(0);
 }
 
@@ -77,15 +77,16 @@ struct AddOpLowering : public OpConversionPattern<AddOp> {
     Value dest = createEmptyDest(rewriter, loc, resTy);
     AffineMap id = rewriter.getMultiDimIdentityMap(rank);
 
-    auto generic = rewriter.create<linalg::GenericOp>(
-        loc, TypeRange{resTy},
+    auto generic = linalg::GenericOp::create(
+        rewriter, loc, TypeRange{resTy},
         /*inputs=*/ValueRange{adaptor.getLhs(), adaptor.getRhs()},
         /*outputs=*/ValueRange{dest},
         /*indexingMaps=*/ArrayRef<AffineMap>{id, id, id},
         /*iteratorTypes=*/parallelIterators(rank),
         [](OpBuilder &nested, Location nestedLoc, ValueRange args) {
-          Value sum = nested.create<arith::AddFOp>(nestedLoc, args[0], args[1]);
-          nested.create<linalg::YieldOp>(nestedLoc, sum);
+          Value sum =
+              arith::AddFOp::create(nested, nestedLoc, args[0], args[1]);
+          linalg::YieldOp::create(nested, nestedLoc, sum);
         });
 
     rewriter.replaceOp(op, generic.getResults());
@@ -110,21 +111,21 @@ struct ReluOpLowering : public OpConversionPattern<ReluOp> {
     Value dest = createEmptyDest(rewriter, loc, resTy);
     // Hoisted out of the region: loop-invariant, and keeps the generic's body
     // to a single op so Stage 3's vectorizer sees the cleanest possible IR.
-    Value zero = rewriter.create<arith::ConstantOp>(
-        loc, rewriter.getZeroAttr(resTy.getElementType()));
+    Value zero = arith::ConstantOp::create(
+        rewriter, loc, rewriter.getZeroAttr(resTy.getElementType()));
 
     AffineMap id = rewriter.getMultiDimIdentityMap(rank);
 
-    auto generic = rewriter.create<linalg::GenericOp>(
-        loc, TypeRange{resTy},
+    auto generic = linalg::GenericOp::create(
+        rewriter, loc, TypeRange{resTy},
         /*inputs=*/ValueRange{adaptor.getInput()},
         /*outputs=*/ValueRange{dest},
         /*indexingMaps=*/ArrayRef<AffineMap>{id, id},
         /*iteratorTypes=*/parallelIterators(rank),
         [zero](OpBuilder &nested, Location nestedLoc, ValueRange args) {
           // maximumf, not maxnumf: NaN must propagate (numpy.maximum semantics).
-          Value r = nested.create<arith::MaximumFOp>(nestedLoc, args[0], zero);
-          nested.create<linalg::YieldOp>(nestedLoc, r);
+          Value r = arith::MaximumFOp::create(nested, nestedLoc, args[0], zero);
+          linalg::YieldOp::create(nested, nestedLoc, r);
         });
 
     rewriter.replaceOp(op, generic.getResults());
@@ -160,14 +161,15 @@ struct MatmulOpLowering : public OpConversionPattern<MatmulOp> {
                                               utils::IteratorType::parallel,
                                               utils::IteratorType::reduction};
 
-    auto generic = rewriter.create<linalg::GenericOp>(
-        loc, TypeRange{resTy},
+    auto generic = linalg::GenericOp::create(
+        rewriter, loc, TypeRange{resTy},
         /*inputs=*/ValueRange{adaptor.getLhs(), adaptor.getRhs()},
         /*outputs=*/ValueRange{dest}, maps, iters,
         [](OpBuilder &nested, Location nestedLoc, ValueRange args) {
-          Value prod = nested.create<arith::MulFOp>(nestedLoc, args[0], args[1]);
-          Value acc = nested.create<arith::AddFOp>(nestedLoc, args[2], prod);
-          nested.create<linalg::YieldOp>(nestedLoc, acc);
+          Value prod =
+              arith::MulFOp::create(nested, nestedLoc, args[0], args[1]);
+          Value acc = arith::AddFOp::create(nested, nestedLoc, args[2], prod);
+          linalg::YieldOp::create(nested, nestedLoc, acc);
         });
 
     rewriter.replaceOp(op, generic.getResults());
@@ -224,14 +226,15 @@ struct Conv2DOpLowering : public OpConversionPattern<Conv2DOp> {
         utils::IteratorType::reduction, // c
     };
 
-    auto generic = rewriter.create<linalg::GenericOp>(
-        loc, TypeRange{resTy},
+    auto generic = linalg::GenericOp::create(
+        rewriter, loc, TypeRange{resTy},
         /*inputs=*/ValueRange{adaptor.getInput(), adaptor.getFilter()},
         /*outputs=*/ValueRange{dest}, maps, iters,
         [](OpBuilder &nested, Location nestedLoc, ValueRange args) {
-          Value prod = nested.create<arith::MulFOp>(nestedLoc, args[0], args[1]);
-          Value acc = nested.create<arith::AddFOp>(nestedLoc, args[2], prod);
-          nested.create<linalg::YieldOp>(nestedLoc, acc);
+          Value prod =
+              arith::MulFOp::create(nested, nestedLoc, args[0], args[1]);
+          Value acc = arith::AddFOp::create(nested, nestedLoc, args[2], prod);
+          linalg::YieldOp::create(nested, nestedLoc, acc);
         });
 
     rewriter.replaceOp(op, generic.getResults());
