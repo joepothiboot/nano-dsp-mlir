@@ -190,6 +190,18 @@ build/bin/nanodsp-opt input.mlir \
 
 The benchmark sweep described above is planned (Stage 5).
 
+### 🖥️ Demo page
+
+```bash
+python3 scripts/gen_demo.py   # writes build/demo/index.html
+```
+
+One page that traces `demo/matmul.mlir` from the `dsp` dialect to NEON and
+AVX2 machine code, shows the tile sizes each target model picks, and reports
+the bit-exact results. The script runs the real tools (`nanodsp-opt`, `llc`,
+`mlir-runner`, the lit suite) and injects their output into
+`demo/template.html`, so nothing on the page is written by hand.
+
 ### 🔥 Mojo kernels and C++ reference
 
 The Mojo toolchain (pinned to 1.1) is installed through [pixi](https://pixi.sh):
