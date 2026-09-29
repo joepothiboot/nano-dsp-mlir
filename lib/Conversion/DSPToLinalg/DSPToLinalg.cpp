@@ -256,9 +256,10 @@ struct ConvertDSPToLinalgPass
 
     ConversionTarget target(*ctx);
     target.addIllegalDialect<DSPDialect>();
-    target.addLegalDialect<arith::ArithDialect, linalg::LinalgDialect,
-                           tensor::TensorDialect, func::FuncDialect>();
-    target.addLegalOp<ModuleOp>();
+    // Everything else is left alone: the payload may already contain other
+    // dialects, and a Stage 3 schedule (transform.named_sequence) can live in
+    // the same module.
+    target.markUnknownOpDynamicallyLegal([](Operation *) { return true; });
 
     RewritePatternSet patterns(ctx);
     populateDSPToLinalgPatterns(patterns);

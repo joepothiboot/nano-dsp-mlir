@@ -1,0 +1,30 @@
+#ifndef NANODSP_SCHEDULE_PASSES_H
+#define NANODSP_SCHEDULE_PASSES_H
+
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Transform/IR/TransformDialect.h"
+#include "mlir/Dialect/UB/IR/UBOps.h"
+#include "mlir/Dialect/Vector/IR/VectorOps.h"
+#include "mlir/Pass/Pass.h"
+
+namespace mlir {
+namespace nanodsp {
+
+#define GEN_PASS_DECL
+#include "nanodsp/Schedule/Passes.h.inc"
+
+#define GEN_PASS_REGISTRATION
+#include "nanodsp/Schedule/Passes.h.inc"
+
+/// Registers -nanodsp-lower-to-llvm: bufferization plus the upstream lowering
+/// from linalg/scf/vector on tensors down to the LLVM dialect (L3 -> L5).
+void registerNanoDSPPipelines();
+
+} // namespace nanodsp
+} // namespace mlir
+
+#endif // NANODSP_SCHEDULE_PASSES_H
