@@ -1,0 +1,778 @@
+<title>nano-dsp-mlir</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+/>
+<style>
+  /* Layout: one centered column, min(1080px, 88%) wide; sections stack, code panels are the visual focus. */
+  :root {
+    --bg: #f4f6f6;
+    --surface: #ffffff;
+    --sunken: #eaefee;
+    --ink: #142120;
+    --muted: #566664;
+    --line: #d6dedc;
+    --accent: #0d6e66;
+    --accent-soft: #d8efec;
+    --ok: #1d7a3e;
+    --ok-soft: #e1f3e6;
+    --bad: #b3261e;
+    --bad-soft: #fbe6e4;
+    --tok-vec: #7a3fb0;
+    --tok-num: #a4540b;
+    --font-display:
+      "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --font-body:
+      "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono:
+      "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1716;
+      --surface: #16201f;
+      --sunken: #0b1211;
+      --ink: #e3ecea;
+      --muted: #93a4a1;
+      --line: #2a3836;
+      --accent: #4fc2b4;
+      --accent-soft: #143a36;
+      --ok: #6fd08f;
+      --ok-soft: #12301d;
+      --bad: #f28b82;
+      --bad-soft: #3a1714;
+      --tok-vec: #c79bf2;
+      --tok-num: #f0b36a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1716;
+    --surface: #16201f;
+    --sunken: #0b1211;
+    --ink: #e3ecea;
+    --muted: #93a4a1;
+    --line: #2a3836;
+    --accent: #4fc2b4;
+    --accent-soft: #143a36;
+    --ok: #6fd08f;
+    --ok-soft: #12301d;
+    --bad: #f28b82;
+    --bad-soft: #3a1714;
+    --tok-vec: #c79bf2;
+    --tok-num: #f0b36a;
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.6;
+    padding-inline: 16px;
+    padding-block: 40px 64px;
+  }
+  .page {
+    width: min(1080px, 88%);
+    margin-inline: auto;
+    display: grid;
+    gap: 28px;
+  }
+  @media (max-width: 640px) {
+    .page {
+      width: 100%;
+    }
+    body {
+      padding-block: 24px 48px;
+    }
+  }
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  h1 {
+    font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.1;
+  }
+  h2 {
+    font-size: 22px;
+    line-height: 1.2;
+  }
+  p {
+    margin: 0;
+  }
+  code,
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .lede {
+    color: var(--muted);
+    max-width: 64ch;
+    font-size: 16px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 12px 20px;
+    flex-wrap: wrap;
+  }
+  .card-head > div:not(.seg) {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 14px;
+    max-width: 70ch;
+  }
+
+  header.hero {
+    display: grid;
+    gap: 14px;
+    padding-block: 8px;
+  }
+  .badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    background: var(--surface);
+  }
+  .badge.ok {
+    color: var(--ok);
+    border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+    background: var(--ok-soft);
+  }
+
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--sunken);
+  }
+  .seg button {
+    font: 500 13px var(--font-mono);
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    padding: 7px 14px;
+    cursor: pointer;
+  }
+  .seg button + button {
+    border-left: 1px solid var(--line);
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--surface);
+  }
+  .seg button:focus-visible,
+  .level:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .levels {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @media (max-width: 640px) {
+    .levels {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  .level {
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    background: var(--sunken);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .level .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .level .name {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .level[aria-selected="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .level[aria-selected="true"] .tag {
+    color: var(--accent);
+  }
+  .caption {
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  pre.code {
+    margin: 0;
+    background: var(--sunken);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font: 12.5px/1.6 var(--font-mono);
+    overflow: auto;
+    max-height: 460px;
+    white-space: pre;
+    tab-size: 4;
+  }
+  pre.code.short {
+    max-height: 320px;
+  }
+  .t-vec {
+    color: var(--tok-vec);
+  }
+  .t-num {
+    color: var(--tok-num);
+    font-weight: 500;
+  }
+  .t-op {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  .stat {
+    background: var(--sunken);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .stat .k {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .stat .v {
+    font: 600 22px/1.2 var(--font-display);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .n {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  .budget {
+    display: grid;
+    gap: 6px;
+  }
+  .bar {
+    position: relative;
+    height: 26px;
+    border-radius: 6px;
+    background: var(--sunken);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .bar .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--accent);
+  }
+  .bar .mark {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    width: 2px;
+    background: var(--ink);
+  }
+  .bar-legend {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  .two {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  @media (max-width: 760px) {
+    .two {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .col {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    align-content: start;
+  }
+  .col-label {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .runs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+  }
+  .run {
+    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid;
+    display: grid;
+    gap: 4px;
+  }
+  .run.ok {
+    background: var(--ok-soft);
+    border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+    color: var(--ok);
+  }
+  .run.bad {
+    background: var(--bad-soft);
+    border-color: color-mix(in srgb, var(--bad) 35%, transparent);
+    color: var(--bad);
+  }
+  .run .who {
+    font: 500 13px var(--font-mono);
+  }
+  .run .what {
+    font-size: 12px;
+    opacity: 0.9;
+  }
+  .run .res {
+    font: 600 20px/1.2 var(--font-display);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .roadmap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+  }
+  .step {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 4px;
+    background: var(--surface);
+  }
+  .step.done {
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  .step .st {
+    font: 500 11px var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .step.done .st {
+    color: var(--accent);
+  }
+  .step .nm {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .step .ds {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  footer {
+    color: var(--muted);
+    font-size: 13px;
+    display: grid;
+    gap: 6px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .bar .fill {
+      transition: width 0.35s ease;
+    }
+  }
+</style>
+
+<div class="page">
+  <header class="hero">
+    <span class="eyebrow">MLIR · LLVM · hardware-aware compilation</span>
+    <h1>nano-dsp-mlir</h1>
+    <p class="lede">
+      A small MLIR compiler for a tiny DSP dialect. It tiles and vectorizes each
+      op for a specific machine, using that machine's cache size and SIMD
+      registers, then proves the result didn't change by a single bit.
+    </p>
+    <div class="badges" id="badges"></div>
+  </header>
+
+  <section class="card" aria-labelledby="pipe-h">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Pipeline</span>
+        <h2 id="pipe-h">One matmul, from source to machine code</h2>
+      </div>
+      <div class="seg" role="group" aria-label="Target machine" data-seg></div>
+    </div>
+    <div class="levels" role="tablist" aria-label="IR level" id="levels"></div>
+    <p class="caption" id="level-caption"></p>
+    <pre class="code" id="level-code" tabindex="0" aria-live="polite"></pre>
+  </section>
+
+  <section class="card" aria-labelledby="tgt-h">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Hardware-aware</span>
+        <h2 id="tgt-h">Same program, different machine, different code</h2>
+        <p class="sub">
+          Tile sizes come from a compile-time machine model. The register tile
+          fills the SIMD register file. The cache tile grows until its working
+          set reaches the cache budget.
+        </p>
+      </div>
+      <div class="seg" role="group" aria-label="Target machine" data-seg></div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="budget">
+      <div class="bar" role="img" id="bar">
+        <div class="fill" id="bar-fill"></div>
+        <div class="mark" id="bar-mark"></div>
+      </div>
+      <div class="bar-legend">
+        <span id="bar-left"></span><span id="bar-right"></span>
+      </div>
+    </div>
+    <div class="two">
+      <div class="col">
+        <span class="col-label">Generated schedule (Transform dialect)</span>
+        <pre class="code short" id="sched" tabindex="0"></pre>
+      </div>
+      <div class="col">
+        <span class="col-label" id="asm-label">Inner loop, machine code</span>
+        <pre class="code short" id="asm" tabindex="0"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="proof-h">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Correctness</span>
+        <h2 id="proof-h">Optimized output is bit-identical</h2>
+        <p class="sub" id="proof-sub"></p>
+      </div>
+    </div>
+    <div class="runs" id="runs"></div>
+    <p class="caption">
+      Each register tile adds one product at a time, as a separate multiply and
+      add, so every output is summed in the same order as the plain loop nest.
+      The red run is the control. It shows the check catches a schedule that
+      reorders the sum.
+    </p>
+  </section>
+
+  <section class="card" aria-labelledby="road-h">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">Roadmap</span>
+        <h2 id="road-h">Where it's going</h2>
+      </div>
+    </div>
+    <div class="roadmap">
+      <div class="step done">
+        <span class="st">Done</span><span class="nm">dsp dialect → linalg</span
+        ><span class="ds"
+          >add, relu, matmul, conv2d with verifiers and lowering</span
+        >
+      </div>
+      <div class="step done">
+        <span class="st">Done</span
+        ><span class="nm">Tiling + vectorization</span
+        ><span class="ds"
+          >Target-model-driven Transform schedules, bit-exact</span
+        >
+      </div>
+      <div class="step done">
+        <span class="st">Done</span><span class="nm">Mojo + C++ oracles</span
+        ><span class="ds"
+          >Same ops, same golden values, three implementations</span
+        >
+      </div>
+      <div class="step done">
+        <span class="st">Done</span><span class="nm">int8 qmatmul</span
+        ><span class="ds"
+          >Zero points, fixed-point requantization, saturation</span
+        >
+      </div>
+      <div class="step">
+        <span class="st">Next</span><span class="nm">Hexagon HVX target</span
+        ><span class="ds">1024-bit vectors, VTCM, run under QEMU</span>
+      </div>
+      <div class="step">
+        <span class="st">Planned</span><span class="nm">Scratchpad + DMA</span
+        ><span class="ds">Double-buffered local memory lowering</span>
+      </div>
+      <div class="step">
+        <span class="st">Planned</span><span class="nm">CUDA + Triton</span
+        ><span class="ds">sm_80 kernels benchmarked against cuBLAS</span>
+      </div>
+      <div class="step">
+        <span class="st">Planned</span><span class="nm">PyTorch custom op</span
+        ><span class="ds">TORCH_LIBRARY op and a small quantized MLP</span>
+      </div>
+    </div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+  const DATA = __DEMO_DATA__;
+  const TARGETS = Object.keys(DATA.targets);
+  let state = { target: TARGETS[0], level: 2 };
+  try {
+    const t = localStorage.getItem("nd-target");
+    if (TARGETS.includes(t)) state.target = t;
+  } catch (e) {}
+
+  const esc = (s) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const kib = (b) =>
+    ((b / 1024) % 1 === 0 ? b / 1024 : (b / 1024).toFixed(1)) + " KiB";
+  const fmt = (n) => n.toLocaleString("en-US");
+
+  function highlight(src) {
+    return esc(src)
+      .replace(/vector&lt;[^&]*&gt;/g, (m) => `<span class="t-vec">${m}</span>`)
+      .replace(
+        /(tile_sizes )\[([\d, ]+)\]/g,
+        (_, a, b) => `${a}[<span class="t-num">${b}</span>]`,
+      )
+      .replace(
+        /\b(arith\.mulf|arith\.addf|transform\.structured\.\w+|fmul\.4s|fadd\.4s|vmulps|vaddps)\b/g,
+        (m) => `<span class="t-op">${m}</span>`,
+      );
+  }
+
+  const LEVELS = [
+    {
+      tag: "L1",
+      name: "dsp",
+      cap: () =>
+        "What the user writes: one dsp.matmul on static-shape tensors. No loops yet.",
+      code: () => DATA.levels.dsp,
+    },
+    {
+      tag: "L2",
+      name: "linalg.generic",
+      cap: () =>
+        "-convert-dsp-to-linalg: one linalg.generic with (m, n, k) indexing maps and an unfused multiply-add body. This uniform op is what schedules target.",
+      code: () => DATA.levels.linalg,
+    },
+    {
+      tag: "L3",
+      name: "Tiled + vectorized",
+      cap: () =>
+        `-nanodsp-optimize=target=${state.target}: cache-tile loops around register-tile loops around a vector multiply and add. Switch the target to see the loop nest change.`,
+      code: () => DATA.targets[state.target].l3,
+    },
+    {
+      tag: "L5",
+      name: "Machine code",
+      cap: () =>
+        `-nanodsp-lower-to-llvm, then llc for ${DATA.targets[state.target].isa}: the inner loop body. Vector multiplies and adds, no scalar multiplies, no FMA.`,
+      code: () => DATA.targets[state.target].asm,
+    },
+  ];
+
+  function renderSegs() {
+    document.querySelectorAll("[data-seg]").forEach((seg) => {
+      seg.innerHTML = "";
+      TARGETS.forEach((t) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = t;
+        b.setAttribute("aria-pressed", String(t === state.target));
+        b.addEventListener("click", () => {
+          state.target = t;
+          try {
+            localStorage.setItem("nd-target", t);
+          } catch (e) {}
+          render();
+        });
+        seg.appendChild(b);
+      });
+    });
+  }
+
+  function renderLevels() {
+    const wrap = document.getElementById("levels");
+    wrap.innerHTML = "";
+    LEVELS.forEach((lv, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "level";
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(i === state.level));
+      b.innerHTML = `<span class="tag">${lv.tag}</span><span class="name">${esc(lv.name)}</span>`;
+      b.addEventListener("click", () => {
+        state.level = i;
+        render();
+      });
+      wrap.appendChild(b);
+    });
+    const lv = LEVELS[state.level];
+    document.getElementById("level-caption").textContent = lv.cap();
+    document.getElementById("level-code").innerHTML = highlight(lv.code());
+  }
+
+  function renderTarget() {
+    const t = DATA.targets[state.target];
+    const dims = ["m", "n", "k"];
+    const tile = (a) => a.join(" × ");
+    const stats = [
+      [
+        "SIMD",
+        `${t.vectorBits}-bit`,
+        `${t.regs} registers × ${t.lanes} f32 lanes`,
+      ],
+      [
+        "Register tile (m × n)",
+        tile(t.regTile.slice(0, 2)),
+        `k = ${t.regTile[2]} keeps the sum order`,
+      ],
+      [
+        "Cache tile (m × n × k)",
+        tile(t.cacheTile),
+        `of ${tile(t.loopRanges)} loops`,
+      ],
+      [
+        "Vector multiplies",
+        fmt(t.asmStats.vmul),
+        `${fmt(t.asmStats.smul)} scalar · ${fmt(t.asmStats.fma)} FMA`,
+      ],
+    ];
+    document.getElementById("stats").innerHTML = stats
+      .map(
+        ([k, v, n]) =>
+          `<div class="stat"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span><span class="n">${esc(n)}</span></div>`,
+      )
+      .join("");
+    const pctWs = (t.workingSetBytes / t.cacheBytes) * 100;
+    const pctBudget = (t.budgetBytes / t.cacheBytes) * 100;
+    document.getElementById("bar-fill").style.width = pctWs + "%";
+    document.getElementById("bar-mark").style.left =
+      `calc(${pctBudget}% - 1px)`;
+    document
+      .getElementById("bar")
+      .setAttribute(
+        "aria-label",
+        `Cache tile working set ${kib(t.workingSetBytes)} of a ${kib(t.budgetBytes)} budget in a ${kib(t.cacheBytes)} cache`,
+      );
+    document.getElementById("bar-left").textContent =
+      `cache tile working set: ${kib(t.workingSetBytes)}`;
+    document.getElementById("bar-right").textContent =
+      `budget ${kib(t.budgetBytes)} = ${Math.round(t.cacheFraction * 100)}% of ${kib(t.cacheBytes)} L1D`;
+    document.getElementById("sched").innerHTML = highlight(t.schedule);
+    document.getElementById("asm").innerHTML = highlight(t.asm);
+    document.getElementById("asm-label").textContent = `Inner loop, ${t.isa}`;
+  }
+
+  function renderStatic() {
+    const b = [];
+    if (DATA.tests)
+      b.push([
+        `${DATA.tests.passed}/${DATA.tests.total} lit tests pass`,
+        DATA.tests.passed === DATA.tests.total,
+      ]);
+    const exact = DATA.proof.runs.every(
+      (r) => (r.expect === "same") === (r.differ === 0),
+    );
+    b.push([exact ? "bit-exact" : "bit-exact check failed", exact]);
+    b.push([`LLVM ${DATA.llvm}`, false]);
+    b.push([
+      `${DATA.shape.m}×${DATA.shape.k} · ${DATA.shape.k}×${DATA.shape.n} f32 matmul`,
+      false,
+    ]);
+    document.getElementById("badges").innerHTML = b
+      .map(
+        ([t, ok]) => `<span class="badge${ok ? " ok" : ""}">${esc(t)}</span>`,
+      )
+      .join("");
+
+    document.getElementById("proof-sub").textContent =
+      `Matmul, three conv2d variants and add + relu, run unscheduled and under each schedule below. All ${fmt(DATA.proof.values)} outputs are compared as raw 32-bit patterns.`;
+    document.getElementById("runs").innerHTML = DATA.proof.runs
+      .map((r) => {
+        const good = (r.expect === "same") === (r.differ === 0);
+        const cls =
+          r.expect === "same" ? (good ? "ok" : "bad") : good ? "bad" : "ok";
+        const res =
+          r.differ === 0 ? "0 values differ" : `${fmt(r.differ)} values differ`;
+        return `<div class="run ${cls}"><span class="who">${esc(r.name)}</span><span class="what">${esc(r.desc)}</span><span class="res">${res}</span></div>`;
+      })
+      .join("");
+
+    document.getElementById("footer").innerHTML =
+      `<span>Every IR listing, tile size, instruction count and bit count on this page is real tool output, generated on ${esc(DATA.generated)} from commit <code>${esc(DATA.commit)}</code>.</span>` +
+      `<span>Regenerate with <code>python3 scripts/gen_demo.py</code>.</span>`;
+  }
+
+  function render() {
+    renderSegs();
+    renderLevels();
+    renderTarget();
+  }
+  renderStatic();
+  render();
+</script>

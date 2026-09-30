@@ -143,4 +143,60 @@ def DSP_Conv2DOp : DSP_Op<"conv2d", [Pure]> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// dsp.qmatmul
+//===----------------------------------------------------------------------===//
+
+def DSP_QMatmulOp : DSP_Op<"qmatmul", [Pure]> {
+  let summary = "int8 matmul with zero points and fixed-point requantization.";
+  let description = [{
+    Quantized `(M x K) * (K x N) -> (M x N)` on `i8` tensors, the way NPU and
+    DSP integer pipelines (and TFLite) compute a quantized fully connected
+    layer. Real values are `scale * (q - zero_point)` per tensor.
+
+    ```
+    acc[i, j] = sum_k (lhs[i, k] - lhs_zp) * (rhs[k, j] - rhs_zp)      (i32)
+    s         = 31 + shift
+    scaled    = (acc * multiplier + 2^(s - 1)) >> s                    (i64)
+    out[i, j] = clamp(out_zp + scaled, -128, 127)                      (i8)
+    ```
+
+    `multiplier * 2^-(31 + shift)` is the combined rescale
+    `lhs_scale * rhs_scale / out_scale`, as a Q0.31 fixed-point multiplier
+    normalized to `[2^30, 2^31)` plus a right shift in `[0, 31]`, so the
+    represented scale lies in `[2^-32, 1)`. The shift is arithmetic, so
+    rounding is half up (toward +infinity): -100.5 becomes -100. This is
+    TFLite's single-rounding `MultiplyByQuantizedMultiplier`. No floating
+    point is involved anywhere, and every implementation of this op
+    (lowering, Mojo, C++ reference) produces identical bits.
+
+    The i32 accumulator cannot overflow: the verifier requires
+    `K * 255 * 255 < 2^31`, i.e. `K <= 33025`.
+
+    ```mlir
+    %0 = dsp.qmatmul %a, %b {lhs_zp = 3 : i32, rhs_zp = -2 : i32,
+                             multiplier = 1073741824 : i32, shift = 3 : i32,
+                             out_zp = -5 : i32}
+       : (tensor<2x3xi8>, tensor<3x4xi8>) -> tensor<2x4xi8>
+    ```
+  }];
+
+  let arguments = (ins
+    DSP_I8TensorOfRank<2>:$lhs,
+    DSP_I8TensorOfRank<2>:$rhs,
+    I32Attr:$lhs_zp,
+    I32Attr:$rhs_zp,
+    I32Attr:$multiplier,
+    I32Attr:$shift,
+    I32Attr:$out_zp
+  );
+  let results = (outs DSP_I8TensorOfRank<2>:$result);
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs attr-dict `:` functional-type(operands, results)
+  }];
+
+  let hasVerifier = 1;
+}
+
 #endif // NANODSP_DIALECT_DSP_IR_DSPOPS_TD

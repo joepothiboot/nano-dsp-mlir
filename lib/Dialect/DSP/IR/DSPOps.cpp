@@ -105,3 +105,48 @@ LogicalResult Conv2DOp::verify() {
 
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// QMatmulOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult QMatmulOp::verify() {
+  RankedTensorType lhsTy = getLhs().getType();
+  RankedTensorType rhsTy = getRhs().getType();
+  RankedTensorType resTy = getResult().getType();
+
+  const int64_t m = lhsTy.getDimSize(0);
+  const int64_t k = lhsTy.getDimSize(1);
+  const int64_t n = rhsTy.getDimSize(1);
+
+  if (rhsTy.getDimSize(0) != k)
+    return emitOpError() << "contraction dimension mismatch: lhs has K=" << k
+                         << " but rhs has K=" << rhsTy.getDimSize(0);
+  if (resTy.getDimSize(0) != m || resTy.getDimSize(1) != n)
+    return emitOpError() << "result shape must be " << m << "x" << n
+                         << ", got " << resTy.getDimSize(0) << "x"
+                         << resTy.getDimSize(1);
+
+  // |x - zp| <= 255 for i8 x and zp, so each product is at most 255^2.
+  constexpr int64_t kMaxK = ((int64_t{1} << 31) - 1) / (255 * 255);
+  if (k > kMaxK)
+    return emitOpError() << "K=" << k << " can overflow the i32 accumulator"
+                         << " (at most " << kMaxK << ")";
+
+  // I32Attr accessors return uint32_t; compare as the signed values they are.
+  auto sgn = [](uint32_t v) { return static_cast<int32_t>(v); };
+  for (auto [name, zp] :
+       {std::pair<StringRef, int32_t>{"lhs_zp", sgn(getLhsZp())},
+        {"rhs_zp", sgn(getRhsZp())},
+        {"out_zp", sgn(getOutZp())}})
+    if (zp < -128 || zp > 127)
+      return emitOpError() << name << " must be in [-128, 127], got " << zp;
+
+  if (sgn(getMultiplier()) < (int32_t{1} << 30))
+    return emitOpError() << "multiplier must be normalized to [2^30, 2^31), "
+                         << "got " << sgn(getMultiplier());
+  if (sgn(getShift()) < 0 || sgn(getShift()) > 31)
+    return emitOpError() << "shift must be in [0, 31], got " << sgn(getShift());
+
+  return success();
+}

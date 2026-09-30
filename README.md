@@ -79,16 +79,17 @@ Two judgment calls drive the whole project. Both are argued in full in
 C++ owns what the compiler _can_ do (`dsp → linalg` conversion, since no
 upstream op exists for that). The Transform dialect owns what it _chose_ to do
 (tile sizes, fusion, vectorization) as a checked-in `.mlir` schedule file. One
-flag (`-nanodsp-optimize`) runs a generated default; `-schedule-file=...` swaps
-in a hand-tuned one, same code path.
+flag (`-nanodsp-optimize`) runs a generated default;
+`-nanodsp-optimize=schedule-file=...` swaps in a hand-tuned one, same code
+path.
 
 **2. Tile sizes are derived, not hardcoded or runtime-queried.**
 A compile-time `TargetModel` (L1 size, vector width, register count) feeds an
 analytical working-set model (`lib/Schedule/TileSizeModel.cpp`) that solves
 for the largest tile that fits `α × L1d`, then snaps to register-width
-multiples. It's validated against a brute-force sweep in `benchmark/sweep.py`,
-and the model-vs-measured comparison is the most valuable artifact in the repo
-(`docs/03-results.md`).
+multiples ([`docs/02-tiling-model.md`](docs/02-tiling-model.md)). Validating it
+against a brute-force sweep, with a model-vs-measured comparison in
+`docs/03-results.md`, is Stage 5 and not done yet.
 
 ---
 
@@ -97,16 +98,19 @@ and the model-vs-measured comparison is the most valuable artifact in the repo
 ```
 nano-dsp-mlir/
 ├── include/nanodsp/
-│   ├── Dialect/DSP/IR/       # dsp.{add,relu,matmul,conv2d} — ODS + verifiers
-│   └── Conversion/DSPToLinalg/  # dsp -> linalg.generic lowering
+│   ├── Dialect/DSP/IR/       # dsp.{add,relu,matmul,conv2d,qmatmul} — ODS + verifiers
+│   ├── Conversion/DSPToLinalg/  # dsp -> linalg.generic lowering
+│   └── Schedule/             # TargetModel, TileSizeModel, schedule passes
 ├── lib/                      # .cpp for everything above
 ├── tools/nanodsp-opt/        # the compiler CLI (mlir-opt clone + our dialect/passes)
 ├── test/
 │   ├── Dialect/DSP/          # op parsing, verification, canonicalization
 │   ├── Conversion/DSPToLinalg/  # lowering structure (FileCheck)
+│   ├── Schedule/             # generated schedules and scheduled IR (FileCheck)
 │   └── Integration/          # end-to-end execution via mlir-runner
+├── schedules/                # hand-written Transform-dialect schedules
 ├── mojo/
-│   ├── nanodsp/              # Mojo package: Tensor[dtype] + SIMD kernels for the same four ops
+│   ├── nanodsp/              # Mojo package: Tensor[dtype] + SIMD kernels for the same ops
 │   └── tests/                # golden + differential tests
 ├── reference/                # scalar C++ oracle (header-only) + golden-value test
 ├── benchmarks/               # kernel throughput (MLIR/C++ side-by-side planned)
@@ -115,8 +119,7 @@ nano-dsp-mlir/
 └── test.sh                   # configure + build + run check-nanodsp
 ```
 
-Planned, not in the repo yet: `Schedule/` (TargetModel, TileSizeModel),
-`schedules/` (transform-dialect schedules), `frontend/`.
+Planned, not in the repo yet: `frontend/`.
 
 ### 🔥 Three implementations, one set of numbers
 
@@ -127,6 +130,10 @@ in `test/Integration/`), and the Mojo kernels are also checked against a naive
 loop nest on odd sizes so every SIMD tail path runs. See
 [`docs/mojo-kernels.md`](docs/mojo-kernels.md).
 
+That includes `dsp.qmatmul`, an int8 matmul with zero points and fixed-point
+requantization, the way DSP and NPU integer pipelines compute a quantized
+layer. See [`docs/quantization.md`](docs/quantization.md).
+
 ---
 
 ## 🚀 Getting started
@@ -136,9 +143,13 @@ loop nest on odd sizes so every SIMD tail path runs. See
 Pin the exact revision. MLIR's transform-dialect and pass APIs change a lot
 between releases.
 
+LLVM/MLIR 21 or newer is required (the code uses the `Op::create(builder, ...)`
+API); CI and local development use 23.1.1. On macOS, `brew install llvm` is
+enough and `./test.sh` finds it automatically. Otherwise build from source:
+
 ```bash
-# LLVM/MLIR 20.1.x, built with -DLLVM_ENABLE_PROJECTS="mlir"
-git clone --branch llvmorg-20.1.0 https://github.com/llvm/llvm-project
+# built with -DLLVM_ENABLE_PROJECTS="mlir"
+git clone --branch llvmorg-23.1.1 https://github.com/llvm/llvm-project
 ```
 
 You'll need `MLIR_DIR` pointing at the install, plus `lit` and `FileCheck` on
@@ -168,13 +179,32 @@ execution via `mlir-runner`).
 ```bash
 build/bin/nanodsp-opt input.mlir \
   -convert-dsp-to-linalg \
-  -one-shot-bufferize="bufferize-function-boundaries" \
-  -convert-linalg-to-loops -convert-vector-to-llvm -convert-func-to-llvm \
-  -reconcile-unrealized-casts
+  -nanodsp-optimize=target=host-neon \
+  -nanodsp-lower-to-llvm
 ```
 
-The `-nanodsp-optimize` / `-nanodsp-apply-schedule` passes and the benchmark
-sweep described above are planned (Stages 3 and 5) and not implemented yet.
+- `-nanodsp-optimize` tiles and vectorizes every `linalg.generic` with a
+  schedule generated from a `TargetModel` (`host-neon` or `x86-avx2`).
+  `-nanodsp-optimize=schedule-file=schedules/matmul-8x12-neon.mlir` applies a
+  hand-written schedule instead.
+- `-nanodsp-emit-schedule=target=...` appends the generated schedule to the
+  module, so you can read it, edit it, and check it in.
+- `-nanodsp-lower-to-llvm` bufferizes and runs the upstream lowering to the
+  LLVM dialect. Drop `-nanodsp-optimize` to get the unscheduled scalar loops.
+
+The benchmark sweep described above is planned (Stage 5).
+
+### 🖥️ Demo page
+
+```bash
+python3 scripts/gen_demo.py   # writes build/demo/index.html
+```
+
+One page that traces `demo/matmul.mlir` from the `dsp` dialect to NEON and
+AVX2 machine code, shows the tile sizes each target model picks, and reports
+the bit-exact results. The script runs the real tools (`nanodsp-opt`, `llc`,
+`mlir-runner`, the lit suite) and injects their output into
+`demo/template.html`, so nothing on the page is written by hand.
 
 ### 🔥 Mojo kernels and C++ reference
 
@@ -194,7 +224,7 @@ pixi run bench           # Mojo kernel throughput
 | ----- | -------------------------------------------------------- | ----------------------------------------------------------------- |
 | 1     | Architecture + judgment calls                            | ✅ done                                                           |
 | 2     | `dsp` dialect + lowering to `linalg.generic`             | ✅ done                                                           |
-| 3     | Tiling + vectorization (Transform dialect schedule)      | ⏳ not started                                                    |
+| 3     | Tiling + vectorization (Transform dialect schedule)      | ✅ done, bit-exact (`lib/Schedule/`, `test/Schedule/`)            |
 | 4     | Bufferization + `linalg → scf → vector → LLVM`           | ✅ done (upstream passes, see `test/Integration/end-to-end.mlir`) |
 | 5     | Benchmark harness                                        | 🚧 started: Mojo kernels only (`benchmarks/`)                     |
 | M     | Mojo kernel library + C++ reference oracle               | ✅ done (`mojo/`, `reference/`; Mojo 1.1)                         |
@@ -204,16 +234,19 @@ pixi run bench           # Mojo kernel throughput
 
 ## 📚 Docs index
 
-Only `mojo-kernels.md` exists so far; the rest are planned.
+Docs that exist:
 
 - [`docs/mojo-kernels.md`](docs/mojo-kernels.md): the Mojo library: design, SIMD strategy, how it's tested
+- [`docs/02-tiling-model.md`](docs/02-tiling-model.md): the working-set derivation
+- [`docs/04-schedule-ir-diff.md`](docs/04-schedule-ir-diff.md): before/after IR for one matmul
+- [`docs/05-soundness.md`](docs/05-soundness.md): why tiling/vectorization can't change results
+- [`docs/quantization.md`](docs/quantization.md): `dsp.qmatmul` semantics, rounding, lowering
+
+Planned:
 
 - [`docs/00-architecture.md`](docs/00-architecture.md): full Stage 1 plan and both judgment-call tradeoffs
 - [`docs/01-ir-contracts.md`](docs/01-ir-contracts.md): the L0–L5 invariant table
-- [`docs/02-tiling-model.md`](docs/02-tiling-model.md): the working-set derivation
 - [`docs/03-results.md`](docs/03-results.md): sweep plots, model vs. measured
-- [`docs/04-schedule-ir-diff.md`](docs/04-schedule-ir-diff.md): before/after IR for one matmul
-- [`docs/05-soundness.md`](docs/05-soundness.md): why tiling/vectorization can't change results
 - [`docs/06-amendments.md`](docs/06-amendments.md): deviations from the original plan, and why
 - [`docs/07-mlir-for-js-devs.md`](docs/07-mlir-for-js-devs.md): MLIR concepts explained via JS/Babel analogies
 - [`docs/architecture.excalidraw`](docs/architecture.excalidraw): the diagram above, editable
@@ -222,9 +255,11 @@ Only `mojo-kernels.md` exists so far; the rest are planned.
 
 - No loop interchange yet. Register tiles nest inside L1 reduction loops
   instead of outside; that's the first knob for the autotuning stage.
-- Convolution vectorization isn't claimed bit-exact (channel-reduction
-  reassociation); matmul and elementwise paths are.
-- `l1Fraction = 0.5` is a starting estimate, not yet validated against
+- Tile sizes must divide the loop extents (no masking or peeling yet), so an
+  awkward or prime extent loses register blocking.
+- The accumulator tile is re-read and re-written on every `k` step; hoisting
+  it out of the `k` loop isn't done yet.
+- `cacheFraction = 0.5` is a starting estimate, not yet validated against
   hardware. That validation is the point of Stage 6.
 
 ## 📜 License

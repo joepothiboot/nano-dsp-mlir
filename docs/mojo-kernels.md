@@ -1,6 +1,6 @@
 # Mojo kernels 🔥
 
-`mojo/nanodsp/` implements the four `dsp` ops as a small Mojo library. It
+`mojo/nanodsp/` implements the `dsp` ops as a small Mojo library. It
 exists for two reasons:
 
 1. 🔍 **A second oracle for the compiler.** The MLIR pipeline and the Mojo
@@ -13,7 +13,7 @@ exists for two reasons:
 ## 🧩 API
 
 ```mojo
-from nanodsp import Tensor, add, relu, matmul, conv2d
+from nanodsp import Tensor, add, relu, matmul, conv2d, qmatmul, QuantParams
 
 var a = Tensor[DType.float32]([2, 3], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 var b = Tensor[DType.float32]([3, 2], fill=1.0)

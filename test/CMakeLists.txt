@@ -1,3 +1,9 @@
+# The path lit sees for test sources. test.sh overrides it with a
+# whitespace-free symlink, because lit does not quote %s in RUN lines and CMake
+# resolves symlinks in CMAKE_CURRENT_SOURCE_DIR.
+set(NANODSP_LIT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH
+  "Test source directory as seen by lit")
+
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
@@ -9,6 +15,8 @@ set(NANODSP_TEST_DEPENDS
   nanodsp-opt
   mlir-opt
   mlir-runner
+  mlir-translate
+  llc
   mlir_runner_utils
   mlir_c_runner_utils
 )
