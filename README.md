@@ -4,6 +4,10 @@ A small MLIR compiler that lowers a tiny image/math DSL all the way down to
 hardware-aware LLVM IR. Built as a portfolio project for compiler roles
 focused on hardware optimization.
 
+🚀 **[Try the demo live](https://joepothiboot.github.io/nano-dsp-mlir/)**: traces
+a matmul from the `dsp` dialect to NEON and AVX2 machine code, with bit-exact
+proof that the optimization didn't change the answer.
+
 ```
 blur(image) + bias        →  dsp.conv2d / dsp.add        →  linalg.generic
                            →  tiled + vectorized loops    →  memref (buffers)
@@ -195,6 +199,9 @@ build/bin/nanodsp-opt input.mlir \
 The benchmark sweep described above is planned (Stage 5).
 
 ### 🖥️ Demo page
+
+🌐 **Live:** https://joepothiboot.github.io/nano-dsp-mlir/ (redeployed on every
+push to `main` by [`deploy-pages.yml`](.github/workflows/deploy-pages.yml))
 
 ```bash
 python3 scripts/gen_demo.py   # writes build/demo/index.html
