@@ -55,3 +55,12 @@ func.func @pipeline(%img: tensor<1x8x8x1xf32>, %k: tensor<3x3x1x1xf32>,
   %2 = dsp.relu %1 : tensor<1x6x6x1xf32>
   return %2 : tensor<1x6x6x1xf32>
 }
+// CHECK-LABEL: func.func @qmatmul
+// CHECK: dsp.qmatmul %{{.*}}, %{{.*}} {lhs_zp = 3 : i32, multiplier = 1073741824 : i32, out_zp = -5 : i32, rhs_zp = -2 : i32, shift = 3 : i32} : (tensor<2x3xi8>, tensor<3x4xi8>) -> tensor<2x4xi8>
+func.func @qmatmul(%a: tensor<2x3xi8>, %b: tensor<3x4xi8>) -> tensor<2x4xi8> {
+  %0 = dsp.qmatmul %a, %b {lhs_zp = 3 : i32, rhs_zp = -2 : i32,
+                           multiplier = 1073741824 : i32, shift = 3 : i32,
+                           out_zp = -5 : i32}
+     : (tensor<2x3xi8>, tensor<3x4xi8>) -> tensor<2x4xi8>
+  return %0 : tensor<2x4xi8>
+}

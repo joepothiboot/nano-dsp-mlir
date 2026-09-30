@@ -87,3 +87,74 @@ func.func @conv2d_zero_stride(%in: tensor<1x8x8x1xf32>, %f: tensor<3x3x1x1xf32>)
      : (tensor<1x8x8x1xf32>, tensor<3x3x1x1xf32>) -> tensor<1x6x6x1xf32>
   return %0 : tensor<1x6x6x1xf32>
 }
+// -----
+
+func.func @qmatmul_f32_rejected(%a: tensor<2x3xf32>, %b: tensor<3x4xf32>) -> tensor<2x4xf32> {
+  // expected-error @+1 {{op operand #0 must be statically shaped rank-2 tensor of i8}}
+  %0 = "dsp.qmatmul"(%a, %b) {lhs_zp = 0 : i32, rhs_zp = 0 : i32, multiplier = 1073741824 : i32, shift = 0 : i32, out_zp = 0 : i32}
+     : (tensor<2x3xf32>, tensor<3x4xf32>) -> tensor<2x4xf32>
+  return %0 : tensor<2x4xf32>
+}
+
+// -----
+
+func.func @qmatmul_k_mismatch(%a: tensor<2x3xi8>, %b: tensor<4x4xi8>) -> tensor<2x4xi8> {
+  // expected-error @+1 {{contraction dimension mismatch: lhs has K=3 but rhs has K=4}}
+  %0 = dsp.qmatmul %a, %b {lhs_zp = 0 : i32, rhs_zp = 0 : i32, multiplier = 1073741824 : i32, shift = 0 : i32, out_zp = 0 : i32}
+     : (tensor<2x3xi8>, tensor<4x4xi8>) -> tensor<2x4xi8>
+  return %0 : tensor<2x4xi8>
+}
+
+// -----
+
+func.func @qmatmul_bad_result(%a: tensor<2x3xi8>, %b: tensor<3x4xi8>) -> tensor<4x2xi8> {
+  // expected-error @+1 {{result shape must be 2x4, got 4x2}}
+  %0 = dsp.qmatmul %a, %b {lhs_zp = 0 : i32, rhs_zp = 0 : i32, multiplier = 1073741824 : i32, shift = 0 : i32, out_zp = 0 : i32}
+     : (tensor<2x3xi8>, tensor<3x4xi8>) -> tensor<4x2xi8>
+  return %0 : tensor<4x2xi8>
+}
+
+// -----
+
+func.func @qmatmul_k_overflow(%a: tensor<1x33026xi8>, %b: tensor<33026x1xi8>) -> tensor<1x1xi8> {
+  // expected-error @+1 {{K=33026 can overflow the i32 accumulator (at most 33025)}}
+  %0 = dsp.qmatmul %a, %b {lhs_zp = 0 : i32, rhs_zp = 0 : i32, multiplier = 1073741824 : i32, shift = 0 : i32, out_zp = 0 : i32}
+     : (tensor<1x33026xi8>, tensor<33026x1xi8>) -> tensor<1x1xi8>
+  return %0 : tensor<1x1xi8>
+}
+
+// -----
+
+func.func @qmatmul_zp_range(%a: tensor<2x3xi8>, %b: tensor<3x4xi8>) -> tensor<2x4xi8> {
+  // expected-error @+1 {{rhs_zp must be in [-128, 127], got -129}}
+  %0 = dsp.qmatmul %a, %b {lhs_zp = 0 : i32, rhs_zp = -129 : i32, multiplier = 1073741824 : i32, shift = 0 : i32, out_zp = 0 : i32}
+     : (tensor<2x3xi8>, tensor<3x4xi8>) -> tensor<2x4xi8>
+  return %0 : tensor<2x4xi8>
+}
+
+// -----
+
+func.func @qmatmul_unnormalized_multiplier(%a: tensor<2x3xi8>, %b: tensor<3x4xi8>) -> tensor<2x4xi8> {
+  // expected-error @+1 {{multiplier must be normalized to [2^30, 2^31), got 536870912}}
+  %0 = dsp.qmatmul %a, %b {lhs_zp = 0 : i32, rhs_zp = 0 : i32, multiplier = 536870912 : i32, shift = 0 : i32, out_zp = 0 : i32}
+     : (tensor<2x3xi8>, tensor<3x4xi8>) -> tensor<2x4xi8>
+  return %0 : tensor<2x4xi8>
+}
+
+// -----
+
+func.func @qmatmul_negative_multiplier(%a: tensor<2x3xi8>, %b: tensor<3x4xi8>) -> tensor<2x4xi8> {
+  // expected-error @+1 {{multiplier must be normalized to [2^30, 2^31), got -1073741824}}
+  %0 = dsp.qmatmul %a, %b {lhs_zp = 0 : i32, rhs_zp = 0 : i32, multiplier = -1073741824 : i32, shift = 0 : i32, out_zp = 0 : i32}
+     : (tensor<2x3xi8>, tensor<3x4xi8>) -> tensor<2x4xi8>
+  return %0 : tensor<2x4xi8>
+}
+
+// -----
+
+func.func @qmatmul_negative_shift(%a: tensor<2x3xi8>, %b: tensor<3x4xi8>) -> tensor<2x4xi8> {
+  // expected-error @+1 {{shift must be in [0, 31], got -1}}
+  %0 = dsp.qmatmul %a, %b {lhs_zp = 0 : i32, rhs_zp = 0 : i32, multiplier = 1073741824 : i32, shift = -1 : i32, out_zp = 0 : i32}
+     : (tensor<2x3xi8>, tensor<3x4xi8>) -> tensor<2x4xi8>
+  return %0 : tensor<2x4xi8>
+}

@@ -2,10 +2,12 @@
 //
 // L1 (dsp, value semantics, whole-array) -> L2 (linalg on tensors, DPS).
 // Invariants established here and relied upon by Stage 3:
-//   * every result is produced by exactly one linalg.generic
+//   * every result is produced by linalg.generic ops only: exactly one, except
+//     dsp.qmatmul, which is an i32 accumulate generic plus an elementwise
+//     requantize generic
 //   * every generic is in destination-passing style with a tensor.empty dest
 //   * reductions have their destination explicitly zero-filled
-//   * all shapes are static, element type is f32
+//   * all shapes are static; element types are f32, or i8/i32 for qmatmul
 //
 //===----------------------------------------------------------------------===//
 
@@ -178,6 +180,107 @@ struct MatmulOpLowering : public OpConversionPattern<MatmulOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// dsp.qmatmul -> two linalg.generic ops
+//
+//   1. accumulate, iterators (m, n, k), i32 destination zero-filled:
+//        acc += (extsi(lhs) - lhs_zp) * (extsi(rhs) - rhs_zp)
+//   2. requantize, iterators (m, n), elementwise i32 -> i8, in i64:
+//        clamp(out_zp + ((acc * multiplier + 2^(s-1)) >> s), -128, 127)
+//
+// Kept as two ops rather than fusing the requantization into the reduction's
+// region: the accumulate is then a plain matmul-shaped generic that Stage 3
+// tiles like the f32 one, and the requantize is a plain elementwise op.
+//===----------------------------------------------------------------------===//
+
+struct QMatmulOpLowering : public OpConversionPattern<QMatmulOp> {
+  using OpConversionPattern<QMatmulOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(QMatmulOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    MLIRContext *ctx = rewriter.getContext();
+    RankedTensorType resTy = op.getResult().getType();
+    Type i32 = rewriter.getI32Type(), i64 = rewriter.getI64Type();
+    auto accTy = RankedTensorType::get(resTy.getShape(), i32);
+
+    // Loop-invariant constants, hoisted out of the regions (as in relu).
+    auto constI32 = [&](int64_t v) -> Value {
+      return arith::ConstantOp::create(rewriter, loc,
+                                       rewriter.getI32IntegerAttr(v));
+    };
+    auto constI64 = [&](int64_t v) -> Value {
+      return arith::ConstantOp::create(rewriter, loc,
+                                       rewriter.getI64IntegerAttr(v));
+    };
+    // I32Attr accessors return uint32_t; read them as the signed values they
+    // are, or a negative zero point zero-extends when widened.
+    auto sext = [](uint32_t v) { return int64_t(static_cast<int32_t>(v)); };
+    Value lhsZp = constI32(sext(op.getLhsZp()));
+    Value rhsZp = constI32(sext(op.getRhsZp()));
+
+    // 1. Accumulate.
+    Value accDest = createZeroDest(rewriter, loc, accTy);
+    AffineExpr m, n, k;
+    bindDims(ctx, m, n, k);
+    SmallVector<AffineMap> accMaps = {
+        AffineMap::get(3, 0, {m, k}, ctx), // lhs  (M x K)
+        AffineMap::get(3, 0, {k, n}, ctx), // rhs  (K x N)
+        AffineMap::get(3, 0, {m, n}, ctx), // acc  (M x N)
+    };
+    SmallVector<utils::IteratorType> accIters = {
+        utils::IteratorType::parallel, utils::IteratorType::parallel,
+        utils::IteratorType::reduction};
+    auto accumulate = linalg::GenericOp::create(
+        rewriter, loc, TypeRange{accTy},
+        /*inputs=*/ValueRange{adaptor.getLhs(), adaptor.getRhs()},
+        /*outputs=*/ValueRange{accDest}, accMaps, accIters,
+        [&](OpBuilder &b, Location l, ValueRange args) {
+          Value a = arith::SubIOp::create(
+              b, l, arith::ExtSIOp::create(b, l, i32, args[0]), lhsZp);
+          Value w = arith::SubIOp::create(
+              b, l, arith::ExtSIOp::create(b, l, i32, args[1]), rhsZp);
+          Value prod = arith::MulIOp::create(b, l, a, w);
+          Value acc = arith::AddIOp::create(b, l, args[2], prod);
+          linalg::YieldOp::create(b, l, acc);
+        });
+
+    // 2. Requantize.
+    int64_t totalShift = 31 + sext(op.getShift());
+    Value multiplier = constI64(sext(op.getMultiplier()));
+    Value round = constI64(int64_t{1} << (totalShift - 1));
+    Value shift = constI64(totalShift);
+    Value outZp = constI64(sext(op.getOutZp()));
+    Value lo = constI64(-128), hi = constI64(127);
+
+    Value outDest = createEmptyDest(rewriter, loc, resTy);
+    AffineMap id = rewriter.getMultiDimIdentityMap(2);
+    auto requantize = linalg::GenericOp::create(
+        rewriter, loc, TypeRange{resTy},
+        /*inputs=*/ValueRange{accumulate.getResult(0)},
+        /*outputs=*/ValueRange{outDest},
+        /*indexingMaps=*/ArrayRef<AffineMap>{id, id},
+        /*iteratorTypes=*/parallelIterators(2),
+        [&](OpBuilder &b, Location l, ValueRange args) {
+          Value x = arith::ExtSIOp::create(b, l, i64, args[0]);
+          x = arith::MulIOp::create(b, l, x, multiplier);
+          x = arith::AddIOp::create(b, l, x, round);
+          // Arithmetic shift = floor division, so the + 2^(s-1) above
+          // rounds half up (toward +infinity), for negative values too.
+          x = arith::ShRSIOp::create(b, l, x, shift);
+          x = arith::AddIOp::create(b, l, x, outZp);
+          x = arith::MaxSIOp::create(b, l, x, lo);
+          x = arith::MinSIOp::create(b, l, x, hi);
+          Value r = arith::TruncIOp::create(b, l, resTy.getElementType(), x);
+          linalg::YieldOp::create(b, l, r);
+        });
+
+    rewriter.replaceOp(op, requantize.getResults());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // dsp.conv2d -> linalg.generic, iterators (n, oh, ow, f, kh, kw, c)
 //
 // input  map: (n, oh*SH + kh*DH, ow*SW + kw*DW, c)
@@ -276,5 +379,5 @@ struct ConvertDSPToLinalgPass
 
 void mlir::nanodsp::populateDSPToLinalgPatterns(RewritePatternSet &patterns) {
   patterns.add<AddOpLowering, ReluOpLowering, MatmulOpLowering,
-               Conv2DOpLowering>(patterns.getContext());
+               QMatmulOpLowering, Conv2DOpLowering>(patterns.getContext());
 }

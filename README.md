@@ -98,7 +98,7 @@ against a brute-force sweep, with a model-vs-measured comparison in
 ```
 nano-dsp-mlir/
 ├── include/nanodsp/
-│   ├── Dialect/DSP/IR/       # dsp.{add,relu,matmul,conv2d} — ODS + verifiers
+│   ├── Dialect/DSP/IR/       # dsp.{add,relu,matmul,conv2d,qmatmul} — ODS + verifiers
 │   ├── Conversion/DSPToLinalg/  # dsp -> linalg.generic lowering
 │   └── Schedule/             # TargetModel, TileSizeModel, schedule passes
 ├── lib/                      # .cpp for everything above
@@ -110,7 +110,7 @@ nano-dsp-mlir/
 │   └── Integration/          # end-to-end execution via mlir-runner
 ├── schedules/                # hand-written Transform-dialect schedules
 ├── mojo/
-│   ├── nanodsp/              # Mojo package: Tensor[dtype] + SIMD kernels for the same four ops
+│   ├── nanodsp/              # Mojo package: Tensor[dtype] + SIMD kernels for the same ops
 │   └── tests/                # golden + differential tests
 ├── reference/                # scalar C++ oracle (header-only) + golden-value test
 ├── benchmarks/               # kernel throughput (MLIR/C++ side-by-side planned)
@@ -129,6 +129,10 @@ kernel (`mojo/nanodsp/`), and as a plain scalar C++ loop nest
 in `test/Integration/`), and the Mojo kernels are also checked against a naive
 loop nest on odd sizes so every SIMD tail path runs. See
 [`docs/mojo-kernels.md`](docs/mojo-kernels.md).
+
+That includes `dsp.qmatmul`, an int8 matmul with zero points and fixed-point
+requantization, the way DSP and NPU integer pipelines compute a quantized
+layer. See [`docs/quantization.md`](docs/quantization.md).
 
 ---
 
@@ -236,6 +240,7 @@ Docs that exist:
 - [`docs/02-tiling-model.md`](docs/02-tiling-model.md): the working-set derivation
 - [`docs/04-schedule-ir-diff.md`](docs/04-schedule-ir-diff.md): before/after IR for one matmul
 - [`docs/05-soundness.md`](docs/05-soundness.md): why tiling/vectorization can't change results
+- [`docs/quantization.md`](docs/quantization.md): `dsp.qmatmul` semantics, rounding, lowering
 
 Planned:
 

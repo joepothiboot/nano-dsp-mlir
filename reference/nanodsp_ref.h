@@ -1,4 +1,4 @@
-// Scalar C++ reference for the four dsp ops.
+// Scalar C++ reference for the dsp ops.
 //
 // The oracle side of the differential tests and the baseline for
 // benchmarks/. Written as the plainest possible loop nest: no SIMD, no
@@ -8,7 +8,9 @@
 // rounding differs from the unfused Mojo kernels and the MLIR pipeline.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 
@@ -94,6 +96,57 @@ inline Tensor conv2d(const Tensor &in, const Tensor &f, std::size_t sh = 1,
               }
           r.data[((n * oh + y) * ow + x) * nf + fo] = acc;
         }
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// Quantized int8 (dsp.qmatmul)
+// ---------------------------------------------------------------------------
+
+struct QTensor {
+  std::vector<std::size_t> shape;
+  std::vector<std::int8_t> data;
+
+  QTensor(std::vector<std::size_t> s, std::vector<std::int8_t> values)
+      : shape(std::move(s)), data(std::move(values)) {
+    if (data.size() != Tensor::numel(shape))
+      throw std::invalid_argument("QTensor: value count does not match shape");
+  }
+};
+
+// Per-tensor quantization of a qmatmul; see dsp.qmatmul in DSPOps.td.
+struct QuantParams {
+  std::int32_t lhs_zp, rhs_zp;
+  std::int32_t multiplier; // Q0.31, normalized to [2^30, 2^31)
+  std::int32_t shift;      // right shift, [0, 31]
+  std::int32_t out_zp;
+};
+
+// clamp(out_zp + ((acc * multiplier + 2^(s-1)) >> s), -128, 127), s = 31 +
+// shift. >> on a negative int64 is an arithmetic shift (defined since
+// C++20), so this rounds half up: -100.5 -> -100.
+inline std::int8_t requantize(std::int32_t acc, const QuantParams &q) {
+  const int s = 31 + q.shift;
+  const std::int64_t scaled =
+      (std::int64_t{acc} * q.multiplier + (std::int64_t{1} << (s - 1))) >> s;
+  return static_cast<std::int8_t>(
+      std::clamp<std::int64_t>(q.out_zp + scaled, -128, 127));
+}
+
+inline QTensor qmatmul(const QTensor &a, const QTensor &b,
+                       const QuantParams &q) {
+  if (a.shape.size() != 2 || b.shape.size() != 2 || a.shape[1] != b.shape[0])
+    throw std::invalid_argument("qmatmul: expected (MxK) * (KxN)");
+  const std::size_t m = a.shape[0], k = a.shape[1], n = b.shape[1];
+  QTensor r({m, n}, std::vector<std::int8_t>(m * n));
+  for (std::size_t i = 0; i < m; ++i)
+    for (std::size_t j = 0; j < n; ++j) {
+      std::int32_t acc = 0;
+      for (std::size_t kk = 0; kk < k; ++kk)
+        acc += (std::int32_t{a.data[i * k + kk]} - q.lhs_zp) *
+               (std::int32_t{b.data[kk * n + j]} - q.rhs_zp);
+      r.data[i * n + j] = requantize(acc, q);
+    }
   return r;
 }
 

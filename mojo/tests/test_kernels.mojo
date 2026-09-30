@@ -12,7 +12,7 @@
 
 from std.testing import assert_equal, assert_raises, assert_true
 
-from nanodsp import Tensor, add, conv2d, matmul, relu
+from nanodsp import QuantParams, Tensor, add, conv2d, matmul, qmatmul, relu, requantize
 
 comptime F32 = DType.float32
 
@@ -184,6 +184,78 @@ def test_conv2d_rejects_channel_mismatch() raises:
         _ = conv2d(pattern([1, 4, 4, 2], 0), pattern([3, 3, 1, 1], 0))
 
 
+# --- qmatmul ----------------------------------------------------------------
+
+comptime I8 = DType.int8
+
+
+def i8(var shape: List[Int], var values: List[Int8]) raises -> Tensor[I8]:
+    return Tensor[I8](shape^, values^)
+
+
+def assert_i8(actual: Tensor[I8], expected: List[Int8]) raises:
+    assert_equal(actual.numel(), len(expected))
+    for i in range(len(expected)):
+        assert_equal(actual[i], expected[i], msg="at flat index " + String(i))
+
+
+def test_qmatmul_golden_zero_points() raises:
+    # test/Integration/DSPToLinalg/qmatmul.mlir, case 1: non-zero zero
+    # points, saturation at both ends, and both .5 ties.
+    var a = i8([2, 3], [-128, 0, 127, 10, -7, 50])
+    var b = i8([3, 4], [1, -3, 127, -128, 4, 2, 0, 9, -1, 5, -55, 30])
+    var q = QuantParams(3, -2, 1073741824, 3, -5)
+    assert_i8(qmatmul(a, b, q), [-23, 57, -128, 127, -4, 13, -105, 27])
+
+
+def test_qmatmul_golden_fractional_multiplier() raises:
+    # Case 2: multiplier ~0.7071, not a power of two.
+    var a = i8([2, 4], [127, -128, 64, -1, -50, 33, -2, 90])
+    var b = i8([4, 2], [3, -7, -2, 11, 100, -100, -9, 4])
+    var q = QuantParams(0, 0, 1518500250, 5, 1)
+    assert_i8(qmatmul(a, b, q), [127, -128, -26, 29])
+
+
+def test_requantize_rounds_half_up() raises:
+    # scale 1/16: 8 -> 0.5 -> 1, -8 -> -0.5 -> 0, -24 -> -1.5 -> -1.
+    var q = QuantParams(0, 0, 1073741824, 3, 0)
+    assert_equal(requantize(8, q), 1)
+    assert_equal(requantize(-8, q), 0)
+    assert_equal(requantize(-24, q), -1)
+    assert_equal(requantize(24, q), 2)
+
+
+def test_qmatmul_matches_naive() raises:
+    # N = 19 so the i32 SIMD tail runs; values span the full i8 range.
+    var m = 5
+    var k = 37
+    var n = 19
+    var a = Tensor[I8]([m, k])
+    var b = Tensor[I8]([k, n])
+    for i in range(a.numel()):
+        a.data[i] = Int8((i * 73 + 11) % 256 - 128)
+    for i in range(b.numel()):
+        b.data[i] = Int8((i * 151 + 7) % 256 - 128)
+    var q = QuantParams(-7, 12, 1276901417, 9, 4)
+    var r = qmatmul(a, b, q)
+    for i in range(m):
+        for j in range(n):
+            var acc: Int32 = 0
+            for kk in range(k):
+                acc += (a[i * k + kk].cast[DType.int32]() - q.lhs_zp) * (
+                    b[kk * n + j].cast[DType.int32]() - q.rhs_zp
+                )
+            assert_equal(r[i * n + j], requantize(acc, q), msg="at " + String(i) + "," + String(j))
+
+
+def test_qmatmul_rejects_bad_params() raises:
+    var a = i8([1, 1], [1])
+    with assert_raises(contains="multiplier"):
+        _ = qmatmul(a, a, QuantParams(0, 0, 1, 0, 0))
+    with assert_raises(contains="zero point"):
+        _ = qmatmul(a, a, QuantParams(0, 200, 1073741824, 0, 0))
+
+
 def main() raises:
     test_add_golden()
     test_add_tail()
@@ -197,4 +269,9 @@ def main() raises:
     test_conv2d_matches_naive()
     test_conv2d_strided_dilated()
     test_conv2d_rejects_channel_mismatch()
-    print("nanodsp: 12 tests passed")
+    test_qmatmul_golden_zero_points()
+    test_qmatmul_golden_fractional_multiplier()
+    test_requantize_rounds_half_up()
+    test_qmatmul_matches_naive()
+    test_qmatmul_rejects_bad_params()
+    print("nanodsp: 17 tests passed")

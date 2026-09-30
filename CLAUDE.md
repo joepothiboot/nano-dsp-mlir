@@ -1,9 +1,9 @@
 # nano-dsp-mlir
 
 Small out-of-tree MLIR compiler: a `dsp` dialect (`add`, `relu`, `matmul`,
-`conv2d` on static-shape f32 tensors) lowered to `linalg.generic`, then down to
-LLVM via upstream passes, plus a SIMD Mojo library implementing the same four
-ops. See `README.md` for the full pitch and roadmap.
+`conv2d` on static-shape f32 tensors, plus the int8 `qmatmul`) lowered to
+`linalg.generic`, then down to LLVM via upstream passes, plus a SIMD Mojo
+library implementing the same ops. See `README.md` for the full pitch and roadmap.
 
 ## Layout
 
@@ -21,7 +21,8 @@ ops. See `README.md` for the full pitch and roadmap.
   numeric output; `Integration/Schedule/bit-exact.mlir` diffs scheduled vs
   unscheduled results bit for bit)
 - `mojo/nanodsp/` — Mojo package: `Tensor[dtype]` + SIMD `add`/`relu`/
-  `matmul`/`conv2d` with the same semantics as the dialect ops
+  `matmul`/`conv2d` (`kernels.mojo`) and `qmatmul` (`quant.mojo`) with the
+  same semantics as the dialect ops
 - `mojo/tests/` — golden (same values as `test/Integration/`) and
   differential (SIMD vs naive loop nest) tests
 - `reference/` — header-only scalar C++ oracle + golden-value test
@@ -65,4 +66,10 @@ pixi run bench           # Mojo kernel benchmarks
   `alias`, stdlib imports as `std.*`, struct parameters as `Self.dtype`, and
   `unsafe_load`/`unsafe_store`/`unsafe_offset` on pointers. Keep builds free of
   deprecation warnings.
+- `dsp.qmatmul` requantizes in integer arithmetic only, rounding half up
+  (TFLite single rounding); see `docs/quantization.md`. ODS `I32Attr`
+  accessors return `uint32_t`: sign-extend explicitly when reading signed
+  attributes.
+- The C++ reference builds as C++20 (arithmetic `>>` on negative integers is
+  defined there).
 - Format non-C++ files with Prettier (`.prettierrc.json`).
