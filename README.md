@@ -24,7 +24,8 @@ runs." This one goes further:
 
 1. 📐 Tile sizes and vector widths are **derived from an explicit machine
    model** (`docs/02-tiling-model.md`): not hardcoded, and not naively queried
-   at runtime. The tradeoffs are laid out in `docs/00-architecture.md`.
+   at runtime. The derivation is in `docs/02-tiling-model.md`; the full
+   architecture write-up (`docs/00-architecture.md`) is still planned.
 2. 📋 The optimization pass is written as **data (a Transform-dialect
    schedule)**, not baked into a C++ pass, so a tuning sweep is a shell loop
    instead of 40 rebuilds.
@@ -66,14 +67,15 @@ Six IR levels, each with a stated invariant. Full diagram:
 | L4    | `memref`, `scf`, `vector`          | aliasing resolved, allocations explicit         |
 | L5    | `llvm`                             | native vector widths, no `memref` left          |
 
-Full contracts: [`docs/01-ir-contracts.md`](docs/01-ir-contracts.md).
+Full contracts: [`docs/01-ir-contracts.md`](docs/01-ir-contracts.md) (planned).
 
 ---
 
 ## 🧭 Key design decisions
 
-Two judgment calls drive the whole project. Both are argued in full in
-[`docs/00-architecture.md`](docs/00-architecture.md).
+Two judgment calls drive the whole project. The second is worked through in
+[`docs/02-tiling-model.md`](docs/02-tiling-model.md); the full argument for both
+is planned for `docs/00-architecture.md`.
 
 **1. Transform dialect (policy) + C++ (mechanism), not one or the other.**
 C++ owns what the compiler _can_ do (`dsp → linalg` conversion, since no
@@ -107,12 +109,15 @@ nano-dsp-mlir/
 │   ├── Dialect/DSP/          # op parsing, verification, canonicalization
 │   ├── Conversion/DSPToLinalg/  # lowering structure (FileCheck)
 │   ├── Schedule/             # generated schedules and scheduled IR (FileCheck)
-│   └── Integration/          # end-to-end execution via mlir-runner
+│   ├── Integration/          # end-to-end execution via mlir-runner
+│   └── Hexagon/              # on-target harness: kernels vs the C++ reference
 ├── schedules/                # hand-written Transform-dialect schedules
 ├── mojo/
 │   ├── nanodsp/              # Mojo package: Tensor[dtype] + SIMD kernels for the same ops
 │   └── tests/                # golden + differential tests
 ├── reference/                # scalar C++ oracle (header-only) + golden-value test
+├── docker/hexagon/           # Hexagon cross toolchain + qemu image
+├── scripts/                  # demo page generator, run-hexagon.sh
 ├── benchmarks/               # kernel throughput (MLIR/C++ side-by-side planned)
 ├── docs/                     # design notes
 ├── pixi.toml                 # Mojo toolchain + task runner
@@ -184,7 +189,8 @@ build/bin/nanodsp-opt input.mlir \
 ```
 
 - `-nanodsp-optimize` tiles and vectorizes every `linalg.generic` with a
-  schedule generated from a `TargetModel` (`host-neon` or `x86-avx2`).
+  schedule generated from a `TargetModel` (`host-neon`, `x86-avx2` or
+  `hexagon-hvx128`).
   `-nanodsp-optimize=schedule-file=schedules/matmul-8x12-neon.mlir` applies a
   hand-written schedule instead.
 - `-nanodsp-emit-schedule=target=...` appends the generated schedule to the
@@ -205,6 +211,19 @@ AVX2 machine code, shows the tile sizes each target model picks, and reports
 the bit-exact results. The script runs the real tools (`nanodsp-opt`, `llc`,
 `mlir-runner`, the lit suite) and injects their output into
 `demo/template.html`, so nothing on the page is written by hand.
+
+### 🔶 Hexagon (emulated)
+
+```bash
+docker build --platform linux/amd64 -t nanodsp-hexagon docker/hexagon
+scripts/run-hexagon.sh
+```
+
+Compiles the kernels for a Hexagon V68 with HVX and runs them under
+`qemu-hexagon`, checking every value bit for bit against the scalar C++
+reference. The scalar and integer-HVX builds pass; the f32 HVX builds compile
+but need a newer QEMU than the image has. Nothing here is timed. See
+[`docs/hexagon-target.md`](docs/hexagon-target.md).
 
 ### 🔥 Mojo kernels and C++ reference
 
@@ -241,6 +260,7 @@ Docs that exist:
 - [`docs/04-schedule-ir-diff.md`](docs/04-schedule-ir-diff.md): before/after IR for one matmul
 - [`docs/05-soundness.md`](docs/05-soundness.md): why tiling/vectorization can't change results
 - [`docs/quantization.md`](docs/quantization.md): `dsp.qmatmul` semantics, rounding, lowering
+- [`docs/hexagon-target.md`](docs/hexagon-target.md): the Hexagon HVX target model and the emulated bit-exact run
 
 Planned:
 
@@ -264,4 +284,4 @@ Planned:
 
 ## 📜 License
 
-MIT (or your choice; update before publishing).
+MIT. See [`LICENSE`](LICENSE).
