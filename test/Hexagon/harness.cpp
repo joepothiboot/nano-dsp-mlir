@@ -2,6 +2,7 @@
 // in kernels.mlir and the scalar reference (reference/nanodsp_ref.h) on the
 // same inputs, on the same (emulated) core, and compares every result bit
 // for bit. Build with -ffp-contract=off, like the host reference.
+#include "../../reference/memref.h"
 #include "../../reference/nanodsp_ref.h"
 
 #include <cstdint>
@@ -11,28 +12,8 @@
 #include <vector>
 
 using namespace nanodsp::ref;
-
-// MLIR's memref descriptor for an identity-layout memref of rank N. index is
-// 64-bit even on Hexagon (see kernels.mlir).
-template <typename T, int N> struct MemRef {
-  T *allocated;
-  T *aligned;
-  std::int64_t offset;
-  std::int64_t sizes[N];
-  std::int64_t strides[N];
-};
-
-template <typename T, int N>
-MemRef<T, N> wrap(std::vector<T> &data, const std::vector<std::size_t> &shape) {
-  MemRef<T, N> m{data.data(), data.data(), 0, {}, {}};
-  std::int64_t stride = 1;
-  for (int d = N - 1; d >= 0; --d) {
-    m.sizes[d] = static_cast<std::int64_t>(shape[d]);
-    m.strides[d] = stride;
-    stride *= m.sizes[d];
-  }
-  return m;
-}
+using nanodsp::MemRef;
+using nanodsp::wrap;
 
 extern "C" {
 // Allocation hooks for -nanodsp-lower-to-llvm=generic-alloc: the kernels
