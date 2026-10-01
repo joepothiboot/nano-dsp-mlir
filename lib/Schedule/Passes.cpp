@@ -132,11 +132,6 @@ struct NanoDSPEmitSchedulePass
 // passes are no-ops on unscheduled (scalar-loop) IR, so this pipeline serves
 // both the scheduled and the unscheduled path.
 //
-// convert-vector-to-scf allocates transfer temporaries at the start of the
-// closest allocation scope, which is the innermost scf.for; after
-// convert-scf-to-cf nothing pops them, so every iteration grows the stack.
-// buffer-loop-hoisting moves them out of the loop nest.
-//
 // It is two halves: -nanodsp-bufferize (tensors -> memrefs, deallocations
 // explicit) and -nanodsp-lower-bufferized-to-llvm. With local-target=<name>, -nanodsp-promote-local
 // and -nanodsp-lower-local run in between, on bufferized IR that still has
@@ -178,8 +173,12 @@ static constexpr llvm::StringLiteral kBufferizePipeline =
 static std::string lowerBufferizedPipeline(bool genericAlloc) {
   return std::string("convert-linalg-to-loops,"
                      "func.func(lower-vector-multi-reduction),"
-                     "convert-vector-to-scf,"
-                     "func.func(buffer-loop-hoisting),"
+                     // full-unroll: lower n-D transfers to 1-D ones in
+                     // place. The default path stages them through a
+                     // memref.alloca inside the innermost loop; with no
+                     // stack restore that grows the stack every iteration
+                     // and overflows it on larger tiled kernels.
+                     "convert-vector-to-scf{full-unroll=true},"
                      "lower-affine,"
                      "convert-scf-to-cf,"
                      "expand-strided-metadata,"

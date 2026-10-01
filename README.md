@@ -139,6 +139,13 @@ in `test/Integration/`), and the Mojo kernels are also checked against a naive
 loop nest on odd sizes so every SIMD tail path runs. See
 [`docs/mojo-kernels.md`](docs/mojo-kernels.md).
 
+On top of the kernels sits a small trait-based API: a `TensorLike` trait, a
+borrowed `TensorView` whose origin ties it to the buffer it reads, and a
+`matmul_tiled` that is generic over both and takes its register tile shape
+and SIMD width as compile-time parameters. It stays bit-exact with the other
+two implementations because it tiles only the output dims. See
+[`docs/mojo-api-design.md`](docs/mojo-api-design.md).
+
 That includes `dsp.qmatmul`, an int8 matmul with zero points and fixed-point
 requantization, the way DSP and NPU integer pipelines compute a quantized
 layer. See [`docs/quantization.md`](docs/quantization.md).
@@ -237,10 +244,14 @@ but need a newer QEMU than the image has. Nothing here is timed. See
 The Mojo toolchain (pinned to 1.1) is installed through [pixi](https://pixi.sh):
 
 ```bash
-pixi run test-mojo       # golden + differential tests for the Mojo kernels
+pixi run test-mojo       # golden, differential and view/tiling tests for the Mojo library
 pixi run test-reference  # golden tests for the C++ reference
 pixi run bench           # Mojo kernel throughput
 ```
+
+The MLIR-vs-C++ benchmark harness (`pixi run bench-check`,
+`pixi run bench-mlir`) is described in
+[`benchmarks/README.md`](benchmarks/README.md).
 
 ---
 
@@ -263,6 +274,7 @@ pixi run bench           # Mojo kernel throughput
 Docs that exist:
 
 - [`docs/mojo-kernels.md`](docs/mojo-kernels.md): the Mojo library: design, SIMD strategy, how it's tested
+- [`docs/mojo-api-design.md`](docs/mojo-api-design.md): the Mojo `TensorLike` trait, borrowed views and origins, compile-time tiles, and why only i/j are tiled
 - [`docs/02-tiling-model.md`](docs/02-tiling-model.md): the working-set derivation
 - [`docs/04-schedule-ir-diff.md`](docs/04-schedule-ir-diff.md): before/after IR for one matmul
 - [`docs/05-soundness.md`](docs/05-soundness.md): why tiling/vectorization can't change results

@@ -1,10 +1,10 @@
 // A scheduled kernel with many register-tile iterations must run, and stay
-// bit-exact. convert-vector-to-scf puts the temporaries of a broadcasting
-// transfer_read at the start of the innermost scf.for (its closest allocation
-// scope); lowered to cf, that alloca grows the stack on every iteration, and
-// this matmul (131072 iterations on host-neon) overflowed it.
-// -nanodsp-lower-to-llvm now hoists them out of the loops
-// (buffer-loop-hoisting).
+// bit-exact. convert-vector-to-scf's default lowering staged n-D transfers
+// through a memref.alloca at the start of the innermost scf.for; lowered to
+// cf, that alloca grew the stack on every iteration, and this matmul (131072
+// iterations on host-neon) overflowed it. -nanodsp-lower-to-llvm now lowers
+// transfers with full-unroll=true, which needs no temporaries
+// (test/Schedule/codegen.mlir checks the IR; this checks the run).
 //
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg \
 // RUN: | mlir-opt %stock_lower_to_llvm \
