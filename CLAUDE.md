@@ -12,6 +12,10 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
 - `include/nanodsp/Schedule/` + `lib/Schedule/` — Stage 3: `TargetModel`,
   `TileSizeModel`, schedule generation, `-nanodsp-optimize`,
   `-nanodsp-emit-schedule`, and the `-nanodsp-lower-to-llvm` pipeline
+  (= `-nanodsp-bufferize` + `-nanodsp-lower-bufferized-to-llvm`);
+  `LocalMemory.cpp` holds `-nanodsp-promote-local` / `-nanodsp-lower-local`
+  (VTCM tiles in `#dsp.local`, double-buffered DMA; see
+  `docs/scratchpad-dma.md`)
 - `schedules/` — hand-written Transform-dialect schedules
 - `lib/` — C++ for the above (verifiers, canonicalizers, lowering patterns)
 - `tools/nanodsp-opt/` — `mlir-opt`-style driver with our dialect registered
