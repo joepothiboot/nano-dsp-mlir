@@ -9,4 +9,5 @@ for each other.
 
 from .tensor import Tensor
 from .kernels import add, relu, matmul, conv2d
+from .layout import TensorLike, TensorView
 from .quant import QuantParams, qmatmul, requantize
