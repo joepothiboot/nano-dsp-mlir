@@ -141,6 +141,11 @@ struct NanoDSPEmitSchedulePass
 // (see test/Hexagon/harness.cpp). The vector
 // passes are no-ops on unscheduled (scalar-loop) IR, so this pipeline serves
 // both the scheduled and the unscheduled path.
+//
+// convert-vector-to-scf allocates transfer temporaries at the start of the
+// closest allocation scope, which is the innermost scf.for; after
+// convert-scf-to-cf nothing pops them, so every iteration grows the stack.
+// buffer-loop-hoisting moves them out of the loop nest.
 namespace {
 struct LowerToLLVMOptions : public PassPipelineOptions<LowerToLLVMOptions> {
   Option<bool> genericAlloc{
@@ -162,6 +167,7 @@ static std::string lowerToLLVMPipeline(bool genericAlloc) {
                      "convert-linalg-to-loops,"
                      "func.func(lower-vector-multi-reduction),"
                      "convert-vector-to-scf,"
+                     "func.func(buffer-loop-hoisting),"
                      "lower-affine,"
                      "convert-scf-to-cf,"
                      "expand-strided-metadata,"
