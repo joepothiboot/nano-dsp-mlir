@@ -2,7 +2,9 @@
 // local memory (#dsp.local, DMAs lowered to copies by -nanodsp-lower-local)
 // must not change a single bit of the result. Shapes are large enough that
 // the hexagon-hvx128 model (256 KiB tile budget) cuts the matmul along k and
-// the conv along output rows, so the promoted loops run several iterations.
+// the conv along output rows, so the promoted loops run several iterations
+// and the double-buffered DMAs alternate between both buffers. The
+// single-buffered variant (double-buffer=false) is checked too.
 //
 // The promoted kernels run on the host: the hexagon-hvx128 schedule's
 // 1024-bit vectors are legalized by the AArch64/x86 backend. What is checked
@@ -13,10 +15,20 @@
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg -nanodsp-optimize=target=hexagon-hvx128 \
 // RUN:     -nanodsp-bufferize -nanodsp-promote-local=target=hexagon-hvx128 \
 // RUN: | FileCheck %s --check-prefix=PROMOTED
-// PROMOTED-LABEL: func.func @main
-// PROMOTED-COUNT-3: memref.alloc() {alignment = 128 : i64} : memref<{{.*}}, #dsp.local>
-// PROMOTED-NOT:     #dsp.local>
-// PROMOTED:         memref.dma_start
+// PROMOTED-LABEL:  func.func @main
+// PROMOTED:        memref.alloc() {alignment = 128 : i64} : memref<2x256x64xf32, #dsp.local>
+// PROMOTED:        memref.alloc() {alignment = 128 : i64} : memref<2x64x128xf32, #dsp.local>
+// PROMOTED:        scf.for
+// PROMOTED:          scf.if
+// PROMOTED-COUNT-2:    memref.dma_start
+// PROMOTED:          memref.dma_wait
+// PROMOTED:        } {nanodsp.cache_loop}
+// PROMOTED:        memref.alloc() {alignment = 128 : i64} : memref<2x1x3x34x16xf32, #dsp.local>
+// PROMOTED:        scf.for
+// PROMOTED:          scf.if
+// PROMOTED:            memref.dma_start
+// PROMOTED:          memref.dma_wait
+// PROMOTED:        } {nanodsp.cache_loop}
 //
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg \
 // RUN: | mlir-opt %stock_lower_to_llvm \
@@ -33,8 +45,16 @@
 // RUN: | mlir-runner -e main --entry-point-result=void \
 // RUN:     --shared-libs=%mlir_runner_utils --shared-libs=%mlir_c_runner_utils \
 // RUN: | sed -e "s/base@ = 0x[0-9a-f]*//" > %t.local
+// RUN: nanodsp-opt %s -convert-dsp-to-linalg -nanodsp-optimize=target=hexagon-hvx128 \
+// RUN:     -nanodsp-bufferize \
+// RUN:     -nanodsp-promote-local="target=hexagon-hvx128 double-buffer=false" \
+// RUN:     -nanodsp-lower-local -nanodsp-lower-bufferized-to-llvm \
+// RUN: | mlir-runner -e main --entry-point-result=void \
+// RUN:     --shared-libs=%mlir_runner_utils --shared-libs=%mlir_c_runner_utils \
+// RUN: | sed -e "s/base@ = 0x[0-9a-f]*//" > %t.single
 // RUN: diff %t.ref %t.hex
 // RUN: diff %t.ref %t.local
+// RUN: diff %t.ref %t.single
 // RUN: FileCheck %s < %t.ref
 
 func.func private @printMemrefI32(%ptr : tensor<*xi32>)

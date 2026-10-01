@@ -74,10 +74,14 @@ def NanoDSPPromoteLocal : Pass<"nanodsp-promote-local", "::mlir::ModuleOp"> {
     compute reads the local copy. Buffers are allocated once around the
     whole cache-tile nest.
 
-    Each tile is loaded synchronously: the DMA is issued and waited for at
-    the top of the iteration that uses it. A tile that does not change with
-    the loop is loaded once before it. If the tiles do not fit
-    `localMemBytes`, the pass reports an error at the loop.
+    A tile that changes with the loop is double-buffered
+    (`memref::multiBuffer`): the DMA for iteration i + 1 is issued before
+    the wait for, and the compute on, iteration i, and the first tile is
+    loaded before the loop. A tile that does not change with the loop is
+    loaded once before it. If the double-buffered tiles do not fit
+    `localMemBytes`, the pass falls back to single buffering (issue and wait
+    at the top of each iteration); if even that does not fit, it reports an
+    error at the loop.
 
     The output tile is not promoted. DMAs move one contiguous run or one
     level of strided rows; a tile that needs more is left in place.
@@ -86,6 +90,9 @@ def NanoDSPPromoteLocal : Pass<"nanodsp-promote-local", "::mlir::ModuleOp"> {
   let options = [
     Option<"targetName", "target", "std::string", /*default=*/"\"host-neon\"",
            "TargetModel whose localMemBytes bounds the promoted tiles">,
+    Option<"doubleBuffer", "double-buffer", "bool", /*default=*/"true",
+           "Double-buffer tiles that change with the loop, so the DMA for "
+           "the next tile can overlap compute on the current one">,
   ];
 
   let dependentDialects = [

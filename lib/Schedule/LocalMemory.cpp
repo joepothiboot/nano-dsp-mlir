@@ -333,6 +333,99 @@ LogicalResult hoistInvariantDma(RewriterBase &rewriter, scf::ForOp loop,
   return success();
 }
 
+/// Gives a promoted tile that changes with `loop` two buffers and two tags,
+/// used in turn: iteration i reads slot ((i - lb) / step) mod 2
+/// (memref::multiBuffer).
+LogicalResult multiBufferTile(RewriterBase &rewriter, PromotedTile &promoted) {
+  FailureOr<memref::AllocOp> buffer =
+      memref::multiBuffer(rewriter, promoted.buffer, /*multiplier=*/2,
+                          /*skipOverrideAnalysis=*/true);
+  if (failed(buffer))
+    return failure();
+  promoted.buffer = *buffer;
+  FailureOr<memref::AllocOp> tag =
+      memref::multiBuffer(rewriter, promoted.tag, /*multiplier=*/2,
+                          /*skipOverrideAnalysis=*/true);
+  if (failed(tag))
+    return failure();
+  promoted.tag = *tag;
+  return success();
+}
+
+/// Software-pipelines the DMAs of multi-buffered tiles: the first tiles are
+/// loaded before the loop, and iteration i issues the DMAs for tile i + 1
+/// before it waits for tile i:
+///
+///   dma_start tile(lb) -> slot(lb)
+///   for i:
+///     if (i + step < ub) dma_start tile(i + step) -> slot(i + step)
+///     dma_wait slot(i)
+///     compute on slot(i)
+///
+/// Slot i + step was last read by the compute of iteration i - step, which
+/// has finished, so a prefetch never overwrites a tile still in use.
+LogicalResult pipelineDmas(RewriterBase &rewriter, scf::ForOp loop,
+                           MutableArrayRef<PromotedTile> tiles) {
+  if (tiles.empty())
+    return success();
+  // Everything a DMA needs (source offsets, slot index, slot subviews) is
+  // pure and computed in the loop body from the induction variable, so it
+  // can be re-evaluated for another iteration.
+  SmallVector<SmallVector<Operation *>> slices;
+  for (PromotedTile &tile : tiles) {
+    FailureOr<SmallVector<Operation *>> slice =
+        getLoopLocalSlice(tile.start, loop);
+    if (failed(slice))
+      return failure();
+    slices.push_back(std::move(*slice));
+  }
+
+  Value iv = loop.getInductionVar();
+  auto cloneDmasFor = [&](Value iteration) {
+    for (auto [tile, slice] : llvm::zip_equal(tiles, slices)) {
+      IRMapping mapping;
+      mapping.map(iv, iteration);
+      for (Operation *op : slice) {
+        Operation *clone = rewriter.clone(*op, mapping);
+        // Fold the slot index for a constant iteration (the prologue).
+        SmallVector<Value> folded;
+        if (succeeded(rewriter.tryFold(clone, folded)) && !folded.empty()) {
+          mapping.map(op->getResults(), folded);
+          rewriter.eraseOp(clone);
+        }
+      }
+      rewriter.clone(*tile.start, mapping);
+    }
+  };
+
+  rewriter.setInsertionPoint(loop);
+  cloneDmasFor(loop.getLowerBound());
+
+  Operation *firstStart = tiles.front().start;
+  for (PromotedTile &tile : tiles)
+    if (tile.start->isBeforeInBlock(firstStart))
+      firstStart = tile.start;
+  Location loc = loop.getLoc();
+  rewriter.setInsertionPoint(firstStart);
+  Value next = arith::AddIOp::create(rewriter, loc, iv, loop.getStep());
+  Value hasNext = arith::CmpIOp::create(
+      rewriter, loc, arith::CmpIPredicate::slt, next, loop.getUpperBound());
+  auto prefetch =
+      scf::IfOp::create(rewriter, loc, hasNext, /*withElseRegion=*/false);
+  rewriter.setInsertionPointToStart(prefetch.thenBlock());
+  cloneDmasFor(next);
+
+  SmallVector<Operation *> defs;
+  for (PromotedTile &tile : tiles) {
+    for (Value operand : tile.start->getOperands())
+      defs.push_back(operand.getDefiningOp());
+    rewriter.eraseOp(tile.start);
+    tile.start = nullptr;
+  }
+  eraseDeadDefs(rewriter, defs);
+  return success();
+}
+
 /// The outermost scf.for around `loop`: the loop nest of one op's cache
 /// tiles.
 Operation *getOutermostLoop(scf::ForOp loop) {
@@ -377,22 +470,40 @@ struct NanoDSPPromoteLocalPass
     if (plans.empty())
       return success();
 
-    uint64_t bytes = 0;
-    for (const TilePlan &plan : plans)
-      bytes += plan.bytes;
-    if (bytes > target.localMemBytes)
+    // Local memory needed with (or without) a second buffer for every tile
+    // that changes with the loop.
+    auto requiredBytes = [&](bool doubled) {
+      uint64_t bytes = 0;
+      for (const TilePlan &plan : plans)
+        bytes += plan.bytes * (doubled && plan.varies ? 2 : 1);
+      return bytes;
+    };
+    bool doubled = doubleBuffer && requiredBytes(true) <= target.localMemBytes;
+    if (requiredBytes(false) > target.localMemBytes)
       return loop.emitError()
-             << "input tiles of this cache tile need " << bytes
+             << "input tiles of this cache tile need " << requiredBytes(false)
              << " bytes of local memory, but target '" << target.name
              << "' has " << target.localMemBytes;
 
     Operation *nest = getOutermostLoop(loop);
+    SmallVector<PromotedTile> promotedTiles, pipelined;
     for (const TilePlan &plan : plans) {
       PromotedTile promoted = promoteTile(rewriter, plan, nest, target);
       if (!plan.varies &&
           failed(hoistInvariantDma(rewriter, loop, promoted)))
         return loop.emitError("could not hoist a loop-invariant tile DMA");
-      rewriter.setInsertionPointAfter(nest);
+      if (plan.varies && doubled) {
+        if (failed(multiBufferTile(rewriter, promoted)))
+          return loop.emitError("could not double-buffer a tile");
+        pipelined.push_back(promoted);
+      }
+      promotedTiles.push_back(promoted);
+    }
+    if (failed(pipelineDmas(rewriter, loop, pipelined)))
+      return loop.emitError("could not pipeline the tile DMAs");
+
+    rewriter.setInsertionPointAfter(nest);
+    for (PromotedTile &promoted : promotedTiles) {
       memref::DeallocOp::create(rewriter, loop.getLoc(), promoted.buffer);
       memref::DeallocOp::create(rewriter, loop.getLoc(), promoted.tag);
     }

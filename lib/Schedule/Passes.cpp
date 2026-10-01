@@ -138,10 +138,18 @@ struct NanoDSPEmitSchedulePass
 // buffer-loop-hoisting moves them out of the loop nest.
 //
 // It is two halves: -nanodsp-bufferize (tensors -> memrefs, deallocations
-// explicit) and the rest. With local-target=<name>, -nanodsp-promote-local
+// explicit) and -nanodsp-lower-bufferized-to-llvm. With local-target=<name>, -nanodsp-promote-local
 // and -nanodsp-lower-local run in between, on bufferized IR that still has
 // the scheduled loop structure.
 namespace {
+struct LowerBufferizedOptions
+    : public PassPipelineOptions<LowerBufferizedOptions> {
+  Option<bool> genericAlloc{
+      *this, "generic-alloc",
+      llvm::cl::desc("See -nanodsp-lower-to-llvm=generic-alloc."),
+      llvm::cl::init(false)};
+};
+
 struct LowerToLLVMOptions : public PassPipelineOptions<LowerToLLVMOptions> {
   Option<bool> genericAlloc{
       *this, "generic-alloc",
@@ -197,6 +205,14 @@ void mlir::nanodsp::registerNanoDSPPipelines() {
       "Bufferize with identity-layout function boundaries and make "
       "deallocations explicit (the first half of -nanodsp-lower-to-llvm).",
       [](OpPassManager &pm) { addPipeline(pm, kBufferizePipeline); });
+
+  PassPipelineRegistration<LowerBufferizedOptions>(
+      "nanodsp-lower-bufferized-to-llvm",
+      "Lower bufferized linalg/scf/vector IR to the LLVM dialect (the second "
+      "half of -nanodsp-lower-to-llvm).",
+      [](OpPassManager &pm, const LowerBufferizedOptions &options) {
+        addPipeline(pm, lowerBufferizedPipeline(options.genericAlloc));
+      });
 
   PassPipelineRegistration<LowerToLLVMOptions>(
       "nanodsp-lower-to-llvm",
