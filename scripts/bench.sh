@@ -3,8 +3,8 @@
 # nanodsp-opt (untiled, and with the host-neon TargetModel schedule) against
 # the scalar C++ reference, plus measured roofline ceilings.
 #
-#   scripts/bench.sh --check   build everything, check every kernel bit for bit
-#                              against reference/nanodsp_ref.h, no timing (CI)
+#   scripts/bench.sh --check   build everything, check every kernel against
+#                              reference/nanodsp_ref.h, no timing (CI)
 #   scripts/bench.sh           check, then time; writes build/bench/results.json
 #
 # Environment:
@@ -153,11 +153,11 @@ git diff --quiet HEAD 2>/dev/null || dirty=true
   printf '    "commit": "%s",\n' "${commit}"
   printf '    "dirty": %s,\n' "${dirty}"
   printf '    "nanodsp_opt": "%s",\n' "$(json_str "${NANODSP_OPT}")"
-  printf '    "llc": "%s",\n' "$(json_str "$(first_line "${LLVM_BIN}/llc" --version | sed 's/^ *//'; "${LLVM_BIN}/llc" --version | sed -n 2p | sed 's/^ *//')")"
+  printf '    "llc": "%s",\n' "$(json_str "$(first_line "${LLVM_BIN}/llc" --version)")"
   printf '    "clang++": "%s",\n' "$(json_str "$(first_line "${LLVM_BIN}/clang++" --version)")"
   printf '    "kernel_flags": "%s",\n' "nanodsp-opt -convert-dsp-to-linalg [schedule] -nanodsp-lower-to-llvm | mlir-translate --mlir-to-llvmir | opt ${IR_OPT} | llc -O3 -mcpu=${CPU}"
   printf '    "cxx_flags": "%s",\n' "$(json_str "${CXXFLAGS[*]}")"
-  printf '    "timing": "%s"\n' "steady_clock; warmup call, calls per sample doubled until >= min-time, best per-call time over samples; results checked bit-exact against nanodsp::ref first"
+  printf '    "timing": "%s"\n' "steady_clock; warmup call, calls per sample doubled until >= min-time, best per-call time over samples; every result checked against nanodsp::ref before timing (see checked)"
   printf '  },\n  "ceilings": '
   cat "${OUT}/ceilings.json"
   printf ',\n  "benchmarks": '

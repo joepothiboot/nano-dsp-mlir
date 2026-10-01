@@ -11,3 +11,6 @@ test-mojo = "mojo run -I mojo mojo/tests/test_kernels.mojo"
 bench = "mojo run -I mojo benchmarks/bench_kernels.mojo"
 test-reference = { cmd = "mkdir -p build && c++ -std=c++20 -O2 -ffp-contract=off -Wall -Wextra -o build/test_reference reference/test_reference.cpp && build/test_reference" }
 test-mlir = "./test.sh"
+# Stage 5 benchmark (scripts/bench.sh; needs build/bin/nanodsp-opt from ./test.sh)
+bench-check = "scripts/bench.sh --check"
+bench-mlir = "scripts/bench.sh"
