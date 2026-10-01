@@ -7,6 +7,13 @@
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg \
 // RUN:     -nanodsp-emit-schedule=target=x86-avx2 \
 // RUN: | FileCheck %s --check-prefixes=CHECK,AVX2
+// RUN: nanodsp-opt %s -convert-dsp-to-linalg -nanodsp-emit-schedule=target=host-neon \
+// RUN: | FileCheck %s --check-prefix=NOLOCAL
+// RUN: nanodsp-opt %s -convert-dsp-to-linalg -nanodsp-emit-schedule=target=x86-avx2 \
+// RUN: | FileCheck %s --check-prefix=NOLOCAL
+// RUN: nanodsp-opt %s -convert-dsp-to-linalg \
+// RUN:     -nanodsp-emit-schedule=target=hexagon-hvx128 \
+// RUN: | FileCheck %s --check-prefix=HEX
 
 // CHECK-LABEL: func.func @matmul
 // NEON: linalg.generic {{.*}}nanodsp.cache_tile = array<i64: 64, 96, 64>, nanodsp.loop_ranges = array<i64: 128, 96, 256>, nanodsp.reg_tile = array<i64: 4, 16, 1>, nanodsp.tag = "op0", nanodsp.working_set_bytes = 65536 : i64
@@ -79,3 +86,16 @@ func.func @relu(%a: tensor<6x20xf32>) -> tensor<6x20xf32> {
 // CHECK-NEXT: transform.structured.vectorize
 // CHECK:      %[[EWF:[^ ]+]] = transform.structured.match ops{["linalg.generic"]} in %[[EWL]]
 // CHECK-NEXT: transform.structured.vectorize %[[EWF]]
+
+// Only a target with local memory (hexagon-hvx128: 256 KiB VTCM) marks the
+// innermost cache-tile loop for -nanodsp-promote-local; ops without a cache
+// tile (relu) get no marker.
+// NOLOCAL:     transform.named_sequence @__transform_main
+// NOLOCAL-NOT: transform.annotate
+// HEX:      %{{[^ ,]+}}, %[[L0:[^ :]+]] = transform.structured.tile_using_for {{.*}} tile_sizes [0, 0, 128]
+// HEX-NEXT: transform.annotate %[[L0]] "nanodsp.cache_loop" : !transform.any_op
+// HEX:      %{{[^ ,]+}}, %[[L1:[^ :]+]] = transform.structured.tile_using_for {{.*}} tile_sizes [0, 1, 0, 0, 0, 0, 0]
+// HEX-NEXT: transform.annotate %[[L1]] "nanodsp.cache_loop" : !transform.any_op
+// HEX:      %{{[^ ,]+}}, %[[L2:[^ :]+]] = transform.structured.tile_using_for {{.*}} tile_sizes [0, 1, 0, 0, 0, 0, 0]
+// HEX-NEXT: transform.annotate %[[L2]] "nanodsp.cache_loop" : !transform.any_op
+// HEX-NOT:  transform.annotate
