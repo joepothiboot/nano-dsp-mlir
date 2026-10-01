@@ -102,6 +102,12 @@ std::string mlir::nanodsp::buildDefaultSchedule(ArrayRef<linalg::GenericOp> ops,
     std::string innermostLoop;
     std::string handle =
         emitTile(os, tag, (tag + "_cache").str(), cacheSizes, innermostLoop);
+    // The innermost cache-tile loop is where -nanodsp-promote-local stages
+    // operand tiles through local memory. Only targets that have local
+    // memory get the marker, so other schedules are unchanged.
+    if (target.localMemBytes > 0 && !innermostLoop.empty())
+      os << "    transform.annotate %" << innermostLoop << " \""
+         << kCacheLoopAttr << "\" : !transform.any_op\n";
     handle =
         emitTile(os, handle, (tag + "_reg").str(), regSizes, innermostLoop);
 

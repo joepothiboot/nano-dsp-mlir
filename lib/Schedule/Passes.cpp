@@ -34,16 +34,6 @@ void registerScheduleExtensions(DialectRegistry &registry) {
   vector::registerTransformDialectExtension(registry);
 }
 
-std::optional<TargetModel> lookupTarget(StringRef name, Operation *op) {
-  if (std::optional<TargetModel> target = TargetModel::lookup(name))
-    return target;
-  std::string known;
-  for (const TargetModel &t : TargetModel::all())
-    known += (known.empty() ? "" : ", ") + t.name.str();
-  op->emitError() << "unknown target '" << name << "' (known: " << known << ")";
-  return std::nullopt;
-}
-
 struct NanoDSPOptimizePass
     : public mlir::nanodsp::impl::NanoDSPOptimizeBase<NanoDSPOptimizePass> {
   using mlir::nanodsp::impl::NanoDSPOptimizeBase<
@@ -141,7 +131,20 @@ struct NanoDSPEmitSchedulePass
 // (see test/Hexagon/harness.cpp). The vector
 // passes are no-ops on unscheduled (scalar-loop) IR, so this pipeline serves
 // both the scheduled and the unscheduled path.
+//
+// It is two halves: -nanodsp-bufferize (tensors -> memrefs, deallocations
+// explicit) and -nanodsp-lower-bufferized-to-llvm. With local-target=<name>, -nanodsp-promote-local
+// and -nanodsp-lower-local run in between, on bufferized IR that still has
+// the scheduled loop structure.
 namespace {
+struct LowerBufferizedOptions
+    : public PassPipelineOptions<LowerBufferizedOptions> {
+  Option<bool> genericAlloc{
+      *this, "generic-alloc",
+      llvm::cl::desc("See -nanodsp-lower-to-llvm=generic-alloc."),
+      llvm::cl::init(false)};
+};
+
 struct LowerToLLVMOptions : public PassPipelineOptions<LowerToLLVMOptions> {
   Option<bool> genericAlloc{
       *this, "generic-alloc",
@@ -152,14 +155,23 @@ struct LowerToLLVMOptions : public PassPipelineOptions<LowerToLLVMOptions> {
           "the allocation size) stays 64-bit, which does not match a 32-bit "
           "libc's malloc(size_t)."),
       llvm::cl::init(false)};
+  Option<std::string> localTarget{
+      *this, "local-target",
+      llvm::cl::desc(
+          "Stage cache tiles through the local memory of this TargetModel "
+          "(-nanodsp-promote-local), then lower the DMAs to copies "
+          "(-nanodsp-lower-local). Empty: no promotion."),
+      llvm::cl::init("")};
 };
 } // namespace
 
-static std::string lowerToLLVMPipeline(bool genericAlloc) {
-  return std::string("one-shot-bufferize{bufferize-function-boundaries "
-                     "function-boundary-type-conversion=identity-layout-map},"
-                     "buffer-deallocation-pipeline,"
-                     "convert-linalg-to-loops,"
+static constexpr llvm::StringLiteral kBufferizePipeline =
+    "one-shot-bufferize{bufferize-function-boundaries "
+    "function-boundary-type-conversion=identity-layout-map},"
+    "buffer-deallocation-pipeline";
+
+static std::string lowerBufferizedPipeline(bool genericAlloc) {
+  return std::string("convert-linalg-to-loops,"
                      "func.func(lower-vector-multi-reduction),"
                      // full-unroll: lower n-D transfers to 1-D ones in
                      // place. The default path stages them through a
@@ -181,13 +193,37 @@ static std::string lowerToLLVMPipeline(bool genericAlloc) {
          "reconcile-unrealized-casts";
 }
 
+static void addPipeline(OpPassManager &pm, StringRef pipeline) {
+  if (failed(parsePassPipeline(pipeline, pm)))
+    llvm::report_fatal_error("invalid nanodsp pipeline");
+}
+
 void mlir::nanodsp::registerNanoDSPPipelines() {
+  PassPipelineRegistration<>(
+      "nanodsp-bufferize",
+      "Bufferize with identity-layout function boundaries and make "
+      "deallocations explicit (the first half of -nanodsp-lower-to-llvm).",
+      [](OpPassManager &pm) { addPipeline(pm, kBufferizePipeline); });
+
+  PassPipelineRegistration<LowerBufferizedOptions>(
+      "nanodsp-lower-bufferized-to-llvm",
+      "Lower bufferized linalg/scf/vector IR to the LLVM dialect (the second "
+      "half of -nanodsp-lower-to-llvm).",
+      [](OpPassManager &pm, const LowerBufferizedOptions &options) {
+        addPipeline(pm, lowerBufferizedPipeline(options.genericAlloc));
+      });
+
   PassPipelineRegistration<LowerToLLVMOptions>(
       "nanodsp-lower-to-llvm",
       "Bufferize and lower linalg/scf/vector on tensors to the LLVM dialect.",
       [](OpPassManager &pm, const LowerToLLVMOptions &options) {
-        if (failed(parsePassPipeline(lowerToLLVMPipeline(options.genericAlloc),
-                                     pm)))
-          llvm::report_fatal_error("invalid nanodsp-lower-to-llvm pipeline");
+        addPipeline(pm, kBufferizePipeline);
+        if (!options.localTarget.empty()) {
+          NanoDSPPromoteLocalOptions promote;
+          promote.targetName = options.localTarget;
+          pm.addPass(createNanoDSPPromoteLocal(promote));
+          pm.addPass(createNanoDSPLowerLocal());
+        }
+        addPipeline(pm, lowerBufferizedPipeline(options.genericAlloc));
       });
 }

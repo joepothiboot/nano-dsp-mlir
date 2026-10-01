@@ -2,6 +2,7 @@
 
 #include "nanodsp/Schedule/TargetModel.h"
 
+#include "mlir/IR/Operation.h"
 #include "mlir/Support/LLVM.h"
 
 using namespace mlir;
@@ -35,5 +36,16 @@ std::optional<TargetModel> TargetModel::lookup(StringRef name) {
   for (const TargetModel &t : kTargets)
     if (t.name == name)
       return t;
+  return std::nullopt;
+}
+
+std::optional<TargetModel> mlir::nanodsp::lookupTarget(StringRef name,
+                                                       Operation *op) {
+  if (std::optional<TargetModel> target = TargetModel::lookup(name))
+    return target;
+  std::string known;
+  for (const TargetModel &t : TargetModel::all())
+    known += (known.empty() ? "" : ", ") + t.name.str();
+  op->emitError() << "unknown target '" << name << "' (known: " << known << ")";
   return std::nullopt;
 }

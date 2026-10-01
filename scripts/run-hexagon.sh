@@ -16,6 +16,11 @@
 #   hvx-int      unscheduled + HVX (-nanodsp-optimize=target=hexagon-hvx128)
 #   hvx-ieee     HVX, IEEE float (+hvx-ieee-fp) + HVX        [needs --hvx-fp]
 #   hvx-qf32     HVX, QFloat (no +hvx-ieee-fp) + HVX         [needs --hvx-fp]
+#   local        hvx-int, plus two larger kernels whose cache tiles are
+#                double-buffered in VTCM (-nanodsp-lower-to-llvm=
+#                local-target=hexagon-hvx128, DMAs lowered to copies):
+#                f32 matmul with the HVX schedule but scalar codegen (no
+#                HVX float in QEMU 8.2), int8 qmatmul on HVX
 #
 # The last two need a qemu-hexagon with the HVX floating-point instructions,
 # which QEMU 8.2 (the image's) lacks. Pass --hvx-fp to run them with the
@@ -41,11 +46,12 @@ in_image() {
 }
 
 # kernel_object <kernels file stem> <build name> <nanodsp-opt schedule> <attrs>
+#               [<-nanodsp-lower-to-llvm options>]
 kernel_object() {
   # Relative paths: MLIR pass options split on whitespace, and the checkout
   # path may contain some.
   build/bin/nanodsp-opt "test/Hexagon/$1.mlir" -convert-dsp-to-linalg $3 \
-      -nanodsp-lower-to-llvm=generic-alloc \
+      -nanodsp-lower-to-llvm="${5:-generic-alloc}" \
     | "${LLVM_BIN}/mlir-translate" --mlir-to-llvmir \
     | "${LLVM_BIN}/llc" -O2 -mtriple="${TARGET}" -mcpu=hexagonv68 \
         -mattr="$4" -hexagon-small-data-threshold=0 -filetype=obj \
@@ -60,6 +66,9 @@ kernel_object kernels-i8 scalar "" "${HVX}"
 kernel_object kernels-i8 hvx "${SCHED}" "${HVX}"
 kernel_object kernels-f32 hvx-ieee "${SCHED}" "${HVX},+hvx-ieee-fp"
 kernel_object kernels-f32 hvx-qf32 "${SCHED}" "${HVX}"
+LOCAL="generic-alloc local-target=hexagon-hvx128"
+kernel_object kernels-local-f32 scalar "${SCHED}" "" "${LOCAL}"
+kernel_object kernels-local-i8 hvx "${SCHED}" "${HVX}" "${LOCAL}"
 
 # Headers for the host-side harness compile, exported from the image once.
 # netfilter headers are skipped: some differ only in case, which a
@@ -73,23 +82,33 @@ if [[ ! -d "${OUT}/sysroot/usr/include/c++" ]]; then
 fi
 
 # Scalar C++, built like the host reference: -ffp-contract=off, no FMA.
-"${LLVM_BIN}/clang++" --target="${TARGET}" --sysroot="${OUT}/sysroot" -mv68 \
-  -O2 -std=c++20 -ffp-contract=off -c test/Hexagon/harness.cpp \
-  -o "${OUT}/harness.o"
+# harness-local.o also checks the local-memory kernels.
+for variant in harness harness-local; do
+  defines=""
+  [[ "${variant}" == harness-local ]] && defines=-DNANODSP_LOCAL_KERNELS
+  "${LLVM_BIN}/clang++" --target="${TARGET}" --sysroot="${OUT}/sysroot" -mv68 \
+    -O2 -std=c++20 -ffp-contract=off ${defines} -c test/Hexagon/harness.cpp \
+    -o "${OUT}/${variant}.o"
+done
 
-builds=("scalar kernels-f32-scalar kernels-i8-scalar"
-        "hvx-int kernels-f32-scalar kernels-i8-hvx")
+# <name> <harness> <kernel objects...>
+builds=("scalar harness kernels-f32-scalar kernels-i8-scalar"
+        "hvx-int harness kernels-f32-scalar kernels-i8-hvx"
+        "local harness-local kernels-f32-scalar kernels-i8-hvx
+           kernels-local-f32-scalar kernels-local-i8-hvx")
 if (( HVX_FP )); then
-  builds+=("hvx-ieee kernels-f32-hvx-ieee kernels-i8-hvx"
-           "hvx-qf32 kernels-f32-hvx-qf32 kernels-i8-hvx")
+  builds+=("hvx-ieee harness kernels-f32-hvx-ieee kernels-i8-hvx"
+           "hvx-qf32 harness kernels-f32-hvx-qf32 kernels-i8-hvx")
 fi
 
 status=0
 for b in "${builds[@]}"; do
-  read -r name f32 i8 <<< "${b}"
+  read -r name harness kernels <<< "$(echo ${b})"
+  objects=""
+  for k in ${kernels}; do objects+=" ${OUT}/${k}.o"; done
   echo "== ${name}"
-  in_image "clang++ --target=${TARGET} -static ${OUT}/harness.o \
-      ${OUT}/${f32}.o ${OUT}/${i8}.o -o ${OUT}/harness-${name} &&
+  in_image "clang++ --target=${TARGET} -static ${OUT}/${harness}.o \
+      ${objects} -o ${OUT}/harness-${name} &&
     ${QEMU} ${OUT}/harness-${name}" || status=1
 done
 exit "${status}"

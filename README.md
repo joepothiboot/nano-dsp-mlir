@@ -239,6 +239,22 @@ reference. The scalar and integer-HVX builds pass; the f32 HVX builds compile
 but need a newer QEMU than the image has. Nothing here is timed. See
 [`docs/hexagon-target.md`](docs/hexagon-target.md).
 
+### 🧱 Local memory (scratchpad + DMA)
+
+```bash
+build/bin/nanodsp-opt input.mlir -convert-dsp-to-linalg \
+  -nanodsp-optimize=target=hexagon-hvx128 \
+  -nanodsp-lower-to-llvm=local-target=hexagon-hvx128
+```
+
+For a target with local memory (Hexagon VTCM), `-nanodsp-promote-local`
+copies the input tiles of each cache tile into `#dsp.local` buffers with
+double-buffered `memref.dma_start`/`dma_wait`, prefetching the next tile
+before computing on the current one. `-nanodsp-lower-local` then turns the
+DMAs into synchronous copies, since neither the host nor `qemu-hexagon` has a
+DMA engine. Results stay bit-exact on the host and on the emulator; no
+speedup is claimed. See [`docs/scratchpad-dma.md`](docs/scratchpad-dma.md).
+
 ### 🔥 Mojo kernels and C++ reference
 
 The Mojo toolchain (pinned to 1.1) is installed through [pixi](https://pixi.sh):
@@ -263,6 +279,7 @@ The MLIR-vs-C++ benchmark harness (`pixi run bench-check`,
 | 2     | `dsp` dialect + lowering to `linalg.generic`             | ✅ done                                                           |
 | 3     | Tiling + vectorization (Transform dialect schedule)      | ✅ done, bit-exact (`lib/Schedule/`, `test/Schedule/`)            |
 | 4     | Bufferization + `linalg → scf → vector → LLVM`           | ✅ done (upstream passes, see `test/Integration/end-to-end.mlir`) |
+| L     | Local memory: VTCM promotion + double-buffered DMA       | ✅ done, functional only (`docs/scratchpad-dma.md`)               |
 | 5     | Benchmark harness                                        | 🚧 started: Mojo kernels only (`benchmarks/`)                     |
 | M     | Mojo kernel library + C++ reference oracle               | ✅ done (`mojo/`, `reference/`; Mojo 1.1)                         |
 | 6     | (planned) DSL frontend polish, autotuning sweep write-up | ⏳ not started                                                    |
@@ -280,6 +297,7 @@ Docs that exist:
 - [`docs/05-soundness.md`](docs/05-soundness.md): why tiling/vectorization can't change results
 - [`docs/quantization.md`](docs/quantization.md): `dsp.qmatmul` semantics, rounding, lowering
 - [`docs/hexagon-target.md`](docs/hexagon-target.md): the Hexagon HVX target model and the emulated bit-exact run
+- [`docs/scratchpad-dma.md`](docs/scratchpad-dma.md): promoting cache tiles to local memory (VTCM) with double-buffered DMA, and lowering it for host/emulator
 
 Planned:
 
@@ -300,6 +318,11 @@ Planned:
   it out of the `k` loop isn't done yet.
 - `cacheFraction = 0.5` is a starting estimate, not yet validated against
   hardware. That validation is the point of Stage 6.
+- Local-memory promotion is functional only: DMAs are lowered to synchronous
+  copies, QEMU models neither VTCM nor DMA timing, and nothing maps
+  `memref.dma_start` to a real DMA engine. The output tile is not promoted,
+  and cache tiles are sized against L2, not VTCM (promotion falls back to
+  single buffering when double buffers don't fit).
 
 ## 📜 License
 

@@ -60,4 +60,69 @@ def NanoDSPEmitSchedule : Pass<"nanodsp-emit-schedule", "::mlir::ModuleOp"> {
   let dependentDialects = ScheduleDependentDialects;
 }
 
+def NanoDSPPromoteLocal : Pass<"nanodsp-promote-local", "::mlir::ModuleOp"> {
+  let summary = "Stage cache-tile input tiles through local memory with DMA (bufferized IR).";
+  let description = [{
+    Runs on bufferized IR produced from a `-nanodsp-optimize` schedule, and
+    only for a target whose TargetModel has local memory (`localMemBytes >
+    0`, e.g. `hexagon-hvx128`); for any other target it changes nothing.
+
+    In every loop the schedule marked `nanodsp.cache_loop` (the innermost
+    cache-tile loop), each read-only operand tile (a `memref.subview` of a
+    buffer defined outside the loop) is copied into a buffer in
+    `#dsp.local` with `memref.dma_start` / `memref.dma_wait`, and the
+    compute reads the local copy. Buffers are allocated once around the
+    whole cache-tile nest.
+
+    A tile that changes with the loop is double-buffered
+    (`memref::multiBuffer`): the DMA for iteration i + 1 is issued before
+    the wait for, and the compute on, iteration i, and the first tile is
+    loaded before the loop. A tile that does not change with the loop is
+    loaded once before it. If the double-buffered tiles do not fit
+    `localMemBytes`, the pass falls back to single buffering (issue and wait
+    at the top of each iteration); if even that does not fit, it reports an
+    error at the loop.
+
+    The output tile is not promoted. DMAs move one contiguous run or one
+    level of strided rows; a tile that needs more is left in place.
+  }];
+
+  let options = [
+    Option<"targetName", "target", "std::string", /*default=*/"\"host-neon\"",
+           "TargetModel whose localMemBytes bounds the promoted tiles">,
+    Option<"doubleBuffer", "double-buffer", "bool", /*default=*/"true",
+           "Double-buffer tiles that change with the loop, so the DMA for "
+           "the next tile can overlap compute on the current one">,
+  ];
+
+  let dependentDialects = [
+    "::mlir::affine::AffineDialect",
+    "::mlir::arith::ArithDialect",
+    "::mlir::memref::MemRefDialect",
+    "::mlir::scf::SCFDialect",
+    "::mlir::nanodsp::DSPDialect"
+  ];
+}
+
+def NanoDSPLowerLocal : Pass<"nanodsp-lower-local", "::mlir::ModuleOp"> {
+  let summary = "Lower DMAs to synchronous copies and drop the #dsp.local memory space.";
+  let description = [{
+    Functional lowering for a host or an emulator, which have no DMA engine
+    and no separate local memory: each `memref.dma_start` produced by
+    `-nanodsp-promote-local` becomes a synchronous `linalg.copy` of the
+    source tile into the local buffer, each `memref.dma_wait` is removed,
+    and `#dsp.local` is replaced by the default memory space so the standard
+    LLVM lowering applies. Tag buffers left without users are removed.
+
+    `linalg.copy` rather than `memref.copy`: a strided `memref.copy` lowers
+    to a call into the MLIR C runner library, which an embedded target such
+    as the Hexagon harness does not link. `linalg.copy` lowers to plain loops.
+  }];
+
+  let dependentDialects = [
+    "::mlir::linalg::LinalgDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+}
+
 #endif // NANODSP_SCHEDULE_PASSES_TD

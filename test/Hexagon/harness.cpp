@@ -39,6 +39,15 @@ void _mlir_ciface_qmatmul_golden(MemRef<std::int8_t, 2> *,
                                  MemRef<std::int8_t, 2> *);
 void _mlir_ciface_qmatmul(MemRef<std::int8_t, 2> *, MemRef<std::int8_t, 2> *,
                           MemRef<std::int8_t, 2> *);
+#ifdef NANODSP_LOCAL_KERNELS
+// kernels-local-{f32,i8}.mlir: cache tiles staged through local memory
+// (-nanodsp-lower-to-llvm=local-target=hexagon-hvx128).
+void _mlir_ciface_matmul_local(MemRef<float, 2> *, MemRef<float, 2> *,
+                               MemRef<float, 2> *);
+void _mlir_ciface_qmatmul_local(MemRef<std::int8_t, 2> *,
+                                MemRef<std::int8_t, 2> *,
+                                MemRef<std::int8_t, 2> *);
+#endif
 }
 
 // Same fill as test/Integration/Schedule/bit-exact.mlir: fractional values
@@ -131,5 +140,35 @@ int main() {
     compare("qmatmul", out.aligned,
             qmatmul(a, b, {-7, 12, 1276901417, 9, 4}).data);
   }
+#ifdef NANODSP_LOCAL_KERNELS
+  {
+    Tensor a({128, 256}), b({256, 128});
+    for (std::size_t i = 0; i < 128; ++i)
+      for (std::size_t j = 0; j < 256; ++j)
+        a.data[i * 256 + j] = fill(i, j);
+    for (std::size_t i = 0; i < 256; ++i)
+      for (std::size_t j = 0; j < 128; ++j)
+        b.data[i * 128 + j] = fill(j, i);
+    auto ma = wrap<float, 2>(a.data, a.shape);
+    auto mb = wrap<float, 2>(b.data, b.shape);
+    MemRef<float, 2> out;
+    _mlir_ciface_matmul_local(&out, &ma, &mb);
+    compare("matmul local", out.aligned, matmul(a, b).data);
+  }
+  {
+    std::vector<std::int8_t> av(128 * 1024), bv(1024 * 128);
+    for (std::size_t i = 0; i < av.size(); ++i)
+      av[i] = std::int8_t(int((i * 73 + 11) % 256) - 128);
+    for (std::size_t i = 0; i < bv.size(); ++i)
+      bv[i] = std::int8_t(int((i * 151 + 7) % 256) - 128);
+    QTensor a({128, 1024}, av), b({1024, 128}, bv);
+    auto ma = wrap<std::int8_t, 2>(a.data, a.shape);
+    auto mb = wrap<std::int8_t, 2>(b.data, b.shape);
+    MemRef<std::int8_t, 2> out;
+    _mlir_ciface_qmatmul_local(&out, &ma, &mb);
+    compare("qmatmul local", out.aligned,
+            qmatmul(a, b, {-7, 12, 1276901417, 9, 4}).data);
+  }
+#endif
   return failures == 0 ? 0 : 1;
 }

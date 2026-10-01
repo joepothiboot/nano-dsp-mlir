@@ -1,0 +1,202 @@
+// RUN: nanodsp-opt %s -split-input-file -nanodsp-promote-local=target=hexagon-hvx128 \
+// RUN:     -verify-diagnostics \
+// RUN: | FileCheck %s --check-prefixes=CHECK,DB
+// RUN: nanodsp-opt %s -split-input-file \
+// RUN:     -nanodsp-promote-local="target=hexagon-hvx128 double-buffer=false" \
+// RUN:     -verify-diagnostics \
+// RUN: | FileCheck %s --check-prefixes=CHECK,SINGLE
+// RUN: nanodsp-opt %s -split-input-file -nanodsp-promote-local=target=host-neon \
+// RUN: | FileCheck %s --check-prefix=NOLOCAL
+
+// Bufferized cache-tile loops, as -nanodsp-optimize + -nanodsp-bufferize
+// leave them; nanodsp.cache_loop marks the innermost cache-tile loop.
+// host-neon has no local memory, so nothing changes there.
+// NOLOCAL-NOT: #dsp.local
+// NOLOCAL-NOT: memref.dma_start
+
+// A k loop over matmul tiles: both input tiles change with k. The A tile is
+// rows of 64 elements, 256 apart (one level of stride); the B tile is one
+// contiguous run. The output tile is written, so it is not promoted.
+//
+// Double-buffered: two slots per tile (and per tag). The first tiles are
+// loaded before the loop; iteration k issues the DMAs for k + 64 into the
+// other slot, then waits for its own slot and computes on it.
+// CHECK-LABEL:  func.func @k_tiles
+// CHECK-SAME:     (%[[A:.*]]: memref<128x256xf32>, %[[B:.*]]: memref<256x64xf32>, %[[C:.*]]: memref<128x64xf32>)
+// CHECK-DAG:    %[[C0:.*]] = arith.constant 0 : index
+// CHECK-DAG:    %[[C64:.*]] = arith.constant 64 : index
+// CHECK-DAG:    %[[C256:.*]] = arith.constant 256 : index
+// DB:           %[[LA:.*]] = memref.alloc() {alignment = 128 : i64} : memref<2x128x64xf32, #dsp.local>
+// DB-NEXT:      %[[TA:.*]] = memref.alloc() : memref<2x1xi32>
+// DB-NEXT:      %[[LB:.*]] = memref.alloc() {alignment = 128 : i64} : memref<2x64x64xf32, #dsp.local>
+// DB-NEXT:      %[[TB:.*]] = memref.alloc() : memref<2x1xi32>
+// DB-NEXT:      %[[TA0:.*]] = memref.subview %[[TA]][%[[C0]], 0] [1, 1] [1, 1]
+// DB-NEXT:      %[[LA0:.*]] = memref.subview %[[LA]][%[[C0]], 0, 0] [1, 128, 64] [1, 1, 1] : memref<2x128x64xf32, #dsp.local> to memref<128x64xf32, strided<[64, 1], offset: ?>, #dsp.local>
+// DB-NEXT:      %[[NA:.*]] = arith.constant 8192 : index
+// DB-NEXT:      memref.dma_start %[[A]][%[[C0]], %[[C0]]], %[[LA0]][%[[C0]], %[[C0]]], %[[NA]], %[[TA0]][%[[C0]]], %[[C256]], %[[C64]]
+// DB-NEXT:      %[[TB0:.*]] = memref.subview %[[TB]][%[[C0]], 0] [1, 1] [1, 1]
+// DB-NEXT:      %[[LB0:.*]] = memref.subview %[[LB]][%[[C0]], 0, 0] [1, 64, 64] [1, 1, 1]
+// DB-NEXT:      %[[NB:.*]] = arith.constant 4096 : index
+// DB-NEXT:      memref.dma_start %[[B]][%[[C0]], %[[C0]]], %[[LB0]][%[[C0]], %[[C0]]], %[[NB]], %[[TB0]][%[[C0]]] :
+// DB-NEXT:      scf.for %[[K:.*]] = %[[C0]] to %[[C256]] step %[[C64]] {
+// DB-NEXT:        %[[SLOT:.*]] = affine.apply #{{.*}}(%[[K]])
+// DB-NEXT:        %[[TBK:.*]] = memref.subview %[[TB]][%[[SLOT]], 0] [1, 1] [1, 1]
+// DB-NEXT:        %[[LBK:.*]] = memref.subview %[[LB]][%[[SLOT]], 0, 0] [1, 64, 64] [1, 1, 1]
+// DB-NEXT:        %[[TAK:.*]] = memref.subview %[[TA]][%[[SLOT]], 0] [1, 1] [1, 1]
+// DB-NEXT:        %[[LAK:.*]] = memref.subview %[[LA]][%[[SLOT]], 0, 0] [1, 128, 64] [1, 1, 1]
+// DB-NEXT:        %[[NEXT:.*]] = arith.addi %[[K]], %[[C64]] : index
+// DB-NEXT:        %[[HAS:.*]] = arith.cmpi slt, %[[NEXT]], %[[C256]] : index
+// DB-NEXT:        scf.if %[[HAS]] {
+// DB-NEXT:          %[[NSLOT:.*]] = affine.apply #{{.*}}(%[[NEXT]])
+// DB-NEXT:          %[[TAN:.*]] = memref.subview %[[TA]][%[[NSLOT]], 0] [1, 1] [1, 1]
+// DB-NEXT:          %[[LAN:.*]] = memref.subview %[[LA]][%[[NSLOT]], 0, 0] [1, 128, 64] [1, 1, 1]
+// DB-NEXT:          memref.dma_start %[[A]][%[[C0]], %[[NEXT]]], %[[LAN]][%[[C0]], %[[C0]]], %[[NA]], %[[TAN]][%[[C0]]], %[[C256]], %[[C64]]
+// DB-NEXT:          %[[TBN:.*]] = memref.subview %[[TB]][%[[NSLOT]], 0] [1, 1] [1, 1]
+// DB-NEXT:          %[[LBN:.*]] = memref.subview %[[LB]][%[[NSLOT]], 0, 0] [1, 64, 64] [1, 1, 1]
+// DB-NEXT:          memref.dma_start %[[B]][%[[NEXT]], %[[C0]]], %[[LBN]][%[[C0]], %[[C0]]], %[[NB]], %[[TBN]][%[[C0]]] :
+// DB-NEXT:        }
+// DB-NEXT:        memref.dma_wait %[[TAK]][%[[C0]]], %[[NA]]
+// DB-NEXT:        memref.dma_wait %[[TBK]][%[[C0]]], %[[NB]]
+// DB-NEXT:        linalg.matmul ins(%[[LAK]], %[[LBK]] : memref<128x64xf32, strided<[64, 1], offset: ?>, #dsp.local>, memref<64x64xf32, strided<[64, 1], offset: ?>, #dsp.local>) outs(%[[C]] : memref<128x64xf32>)
+// DB-NEXT:      } {nanodsp.cache_loop}
+//
+// Single-buffered: the DMAs are issued and waited for at the top of each
+// iteration.
+// SINGLE:       %[[LA:.*]] = memref.alloc() {alignment = 128 : i64} : memref<128x64xf32, #dsp.local>
+// SINGLE-NEXT:  %[[TA:.*]] = memref.alloc() : memref<1xi32>
+// SINGLE-NEXT:  %[[LB:.*]] = memref.alloc() {alignment = 128 : i64} : memref<64x64xf32, #dsp.local>
+// SINGLE-NEXT:  %[[TB:.*]] = memref.alloc() : memref<1xi32>
+// SINGLE-NEXT:  scf.for %[[K:.*]] = %[[C0]] to %[[C256]] step %[[C64]] {
+// SINGLE-NEXT:    %[[NA:.*]] = arith.constant 8192 : index
+// SINGLE-NEXT:    memref.dma_start %[[A]][%[[C0]], %[[K]]], %[[LA]][%[[C0]], %[[C0]]], %[[NA]], %[[TA]][%[[C0]]], %[[C256]], %[[C64]]
+// SINGLE-NEXT:    memref.dma_wait %[[TA]][%[[C0]]], %[[NA]]
+// SINGLE-NEXT:    %[[NB:.*]] = arith.constant 4096 : index
+// SINGLE-NEXT:    memref.dma_start %[[B]][%[[K]], %[[C0]]], %[[LB]][%[[C0]], %[[C0]]], %[[NB]], %[[TB]][%[[C0]]] :
+// SINGLE-NEXT:    memref.dma_wait %[[TB]][%[[C0]]], %[[NB]]
+// SINGLE-NEXT:    linalg.matmul ins(%[[LA]], %[[LB]] : memref<128x64xf32, #dsp.local>, memref<64x64xf32, #dsp.local>) outs(%[[C]] : memref<128x64xf32>)
+// SINGLE-NEXT:  } {nanodsp.cache_loop}
+// CHECK-DAG:    memref.dealloc %[[LA]] :
+// CHECK-DAG:    memref.dealloc %[[TA]] :
+// CHECK-DAG:    memref.dealloc %[[LB]] :
+// CHECK-DAG:    memref.dealloc %[[TB]] :
+func.func @k_tiles(%a: memref<128x256xf32>, %b: memref<256x64xf32>, %c: memref<128x64xf32>) {
+  %c0 = arith.constant 0 : index
+  %c64 = arith.constant 64 : index
+  %c256 = arith.constant 256 : index
+  scf.for %k = %c0 to %c256 step %c64 {
+    %sa = memref.subview %a[0, %k] [128, 64] [1, 1] : memref<128x256xf32> to memref<128x64xf32, strided<[256, 1], offset: ?>>
+    %sb = memref.subview %b[%k, 0] [64, 64] [1, 1] : memref<256x64xf32> to memref<64x64xf32, strided<[64, 1], offset: ?>>
+    linalg.matmul ins(%sa, %sb : memref<128x64xf32, strided<[256, 1], offset: ?>>, memref<64x64xf32, strided<[64, 1], offset: ?>>)
+                  outs(%c : memref<128x64xf32>)
+  } {nanodsp.cache_loop}
+  return
+}
+
+// -----
+
+// The innermost cache loop is n: the A tile only depends on m, so it gets
+// one buffer and is loaded once per m iteration, before the n loop. The B
+// tile changes with n and is double-buffered. Buffers are allocated around
+// the whole nest.
+// CHECK-LABEL: func.func @invariant_tile
+// CHECK:       %[[LA:.*]] = memref.alloc() {alignment = 128 : i64} : memref<64x256xf32, #dsp.local>
+// DB:          memref.alloc() {alignment = 128 : i64} : memref<2x256x64xf32, #dsp.local>
+// SINGLE:      memref.alloc() {alignment = 128 : i64} : memref<256x64xf32, #dsp.local>
+// CHECK:       scf.for %[[M:.*]] =
+// CHECK-NEXT:    arith.constant 16384
+// CHECK-NEXT:    memref.dma_start %{{.*}}[%[[M]], %{{.*}}], %[[LA]]
+// CHECK-NEXT:    memref.dma_wait
+// DB:            memref.dma_start
+// CHECK:         scf.for
+// DB:              scf.if
+// CHECK:             memref.dma_start {{.*}} : memref<256x128xf32>, memref<256x64xf32, {{.*}}#dsp.local>
+// CHECK:           memref.dma_wait
+// CHECK:           linalg.matmul ins(%[[LA]], %{{.*}} :
+// CHECK:         } {nanodsp.cache_loop}
+// CHECK-NEXT:  }
+// CHECK:       memref.dealloc %[[LA]] :
+func.func @invariant_tile(%a: memref<256x256xf32>, %b: memref<256x128xf32>, %c: memref<256x128xf32>) {
+  %c0 = arith.constant 0 : index
+  %c64 = arith.constant 64 : index
+  %c128 = arith.constant 128 : index
+  %c256 = arith.constant 256 : index
+  scf.for %m = %c0 to %c256 step %c64 {
+    scf.for %n = %c0 to %c128 step %c64 {
+      %sa = memref.subview %a[%m, 0] [64, 256] [1, 1] : memref<256x256xf32> to memref<64x256xf32, strided<[256, 1], offset: ?>>
+      %sb = memref.subview %b[0, %n] [256, 64] [1, 1] : memref<256x128xf32> to memref<256x64xf32, strided<[128, 1], offset: ?>>
+      %sc = memref.subview %c[%m, %n] [64, 64] [1, 1] : memref<256x128xf32> to memref<64x64xf32, strided<[128, 1], offset: ?>>
+      linalg.matmul ins(%sa, %sb : memref<64x256xf32, strided<[256, 1], offset: ?>>, memref<256x64xf32, strided<[128, 1], offset: ?>>)
+                    outs(%sc : memref<64x64xf32, strided<[128, 1], offset: ?>>)
+    } {nanodsp.cache_loop}
+  }
+  return
+}
+
+// -----
+
+// Left alone: a loop without the marker, and a tile whose rows are not
+// evenly strided (two levels of stride), which one DMA cannot describe.
+// CHECK-LABEL: func.func @not_promoted
+// CHECK-NOT:   #dsp.local
+// CHECK-NOT:   memref.dma_start
+// CHECK:       return
+func.func @not_promoted(%a: memref<8x8x16xf32>, %out: memref<2x4x8xf32>) {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c2 = arith.constant 2 : index
+  %c8 = arith.constant 8 : index
+  scf.for %i = %c0 to %c8 step %c2 {
+    %s = memref.subview %a[%i, 0, 0] [2, 4, 8] [1, 1, 1] : memref<8x8x16xf32> to memref<2x4x8xf32, strided<[128, 16, 1], offset: ?>>
+    memref.copy %s, %out : memref<2x4x8xf32, strided<[128, 16, 1], offset: ?>> to memref<2x4x8xf32>
+  }
+  scf.for %i = %c0 to %c8 step %c2 {
+    %s = memref.subview %a[%i, 0, 0] [2, 4, 8] [1, 1, 1] : memref<8x8x16xf32> to memref<2x4x8xf32, strided<[128, 16, 1], offset: ?>>
+    linalg.copy ins(%s : memref<2x4x8xf32, strided<[128, 16, 1], offset: ?>>) outs(%out : memref<2x4x8xf32>)
+  } {nanodsp.cache_loop}
+  return
+}
+
+// -----
+
+// 512x128 + 128x64 f32 tiles need 288 KiB; hexagon-hvx128 has 256 KiB of
+// VTCM.
+func.func @over_budget(%a: memref<512x256xf32>, %b: memref<256x64xf32>, %c: memref<512x64xf32>) {
+  %c0 = arith.constant 0 : index
+  %c128 = arith.constant 128 : index
+  %c256 = arith.constant 256 : index
+  // expected-error @+1 {{input tiles of this cache tile need 294912 bytes of local memory, but target 'hexagon-hvx128' has 262144}}
+  scf.for %k = %c0 to %c256 step %c128 {
+    %sa = memref.subview %a[0, %k] [512, 128] [1, 1] : memref<512x256xf32> to memref<512x128xf32, strided<[256, 1], offset: ?>>
+    %sb = memref.subview %b[%k, 0] [128, 64] [1, 1] : memref<256x64xf32> to memref<128x64xf32, strided<[64, 1], offset: ?>>
+    linalg.matmul ins(%sa, %sb : memref<512x128xf32, strided<[256, 1], offset: ?>>, memref<128x64xf32, strided<[64, 1], offset: ?>>)
+                  outs(%c : memref<512x64xf32>)
+  } {nanodsp.cache_loop}
+  return
+}
+
+// -----
+
+// 256x128 + 128x64 f32 tiles: 160 KiB fit the 256 KiB of VTCM once, 320 KiB
+// double-buffered do not, so the tiles stay single-buffered.
+// CHECK-LABEL: func.func @single_buffer_fallback
+// CHECK:       memref.alloc() {alignment = 128 : i64} : memref<256x128xf32, #dsp.local>
+// CHECK:       memref.alloc() {alignment = 128 : i64} : memref<128x64xf32, #dsp.local>
+// CHECK:       scf.for
+// CHECK-NOT:     scf.if
+// CHECK:         memref.dma_start
+// CHECK-NEXT:    memref.dma_wait
+// CHECK:         memref.dma_start
+// CHECK-NEXT:    memref.dma_wait
+// CHECK-NEXT:    linalg.matmul
+func.func @single_buffer_fallback(%a: memref<256x256xf32>, %b: memref<256x64xf32>, %c: memref<256x64xf32>) {
+  %c0 = arith.constant 0 : index
+  %c128 = arith.constant 128 : index
+  %c256 = arith.constant 256 : index
+  scf.for %k = %c0 to %c256 step %c128 {
+    %sa = memref.subview %a[0, %k] [256, 128] [1, 1] : memref<256x256xf32> to memref<256x128xf32, strided<[256, 1], offset: ?>>
+    %sb = memref.subview %b[%k, 0] [128, 64] [1, 1] : memref<256x64xf32> to memref<128x64xf32, strided<[64, 1], offset: ?>>
+    linalg.matmul ins(%sa, %sb : memref<256x128xf32, strided<[256, 1], offset: ?>>, memref<128x64xf32, strided<[64, 1], offset: ?>>)
+                  outs(%c : memref<256x64xf32>)
+  } {nanodsp.cache_loop}
+  return
+}
