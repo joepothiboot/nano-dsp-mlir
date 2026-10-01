@@ -17,6 +17,8 @@
 #include <optional>
 
 namespace mlir {
+class Operation;
+
 namespace nanodsp {
 
 struct TargetModel {
@@ -43,6 +45,10 @@ struct TargetModel {
   static std::optional<TargetModel> lookup(llvm::StringRef name);
   static llvm::ArrayRef<TargetModel> all();
 };
+
+/// TargetModel::lookup, but reports an unknown name as an error on `op`,
+/// listing the known targets.
+std::optional<TargetModel> lookupTarget(llvm::StringRef name, Operation *op);
 
 } // namespace nanodsp
 } // namespace mlir
