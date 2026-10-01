@@ -249,6 +249,10 @@ pixi run test-reference  # golden tests for the C++ reference
 pixi run bench           # Mojo kernel throughput
 ```
 
+The MLIR-vs-C++ benchmark harness (`pixi run bench-check`,
+`pixi run bench-mlir`) is described in
+[`benchmarks/README.md`](benchmarks/README.md).
+
 ---
 
 ## 📊 Project status

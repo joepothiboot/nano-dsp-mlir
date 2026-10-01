@@ -33,5 +33,10 @@ jobs:
       - name: C++ reference golden tests
         run: pixi run test-reference
 
+      # Builds the benchmark kernels and checks them against the C++
+      # reference; no timing on shared runners.
+      - name: Benchmark kernels (correctness only)
+        run: pixi run bench-check
+
       - name: Mojo kernel tests
         run: pixi run test-mojo
