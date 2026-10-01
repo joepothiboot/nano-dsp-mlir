@@ -6,10 +6,15 @@ order as the naive loop nest (and as `linalg.generic` after
 `-convert-linalg-to-loops`), and multiply and add are kept separate rather
 than fused, so results are bit-identical to the scalar reference, not just
 close.
+
+`matmul_tiled` is the generic version: it is written against the
+`TensorLike` trait, so the same source runs on owned tensors and on strided
+views, and its tile shape and SIMD width are compile-time parameters.
 """
 
 from std.sys import simd_width_of
 
+from .layout import TensorLike
 from .tensor import Tensor
 
 
@@ -84,6 +89,136 @@ def matmul[
         for kk in range(k):
             _axpy(result.data, i * n, b.data, kk * n, a.data[i * k + kk], n)
     return result^
+
+
+def matmul_tiled[
+    A: TensorLike,
+    B: TensorLike,
+    C: TensorLike,
+    //,
+    dtype: DType,
+    tile_m: Int,
+    tile_n: Int,
+    width: Int = simd_width_of[dtype](),
+](a: A, b: B, mut c: C) raises:
+    """`c = a * b` for `(M x K) * (K x N) -> (M x N)`, tiled over i and j.
+
+    Generic over `TensorLike`, so `a`, `b` and `c` can each be a `Tensor` or
+    a `TensorView` (including a tile of a larger buffer). `c` is fully
+    overwritten.
+
+    The output is cut into `tile_m x tile_n` blocks. A full block is computed
+    by a register micro-kernel: `tile_m * tile_n / width` SIMD accumulators
+    that start at zero, take one `acc + a[i, k] * b[k, j:j+width]` per k, and
+    are stored once at the end. Partial blocks at the bottom and right edges
+    use the same update one row at a time, with a scalar tail for the last
+    `N mod width` columns.
+
+    Only i and j are tiled. Every output element is still
+    `((0 + a[i,0]*b[0,j]) + a[i,1]*b[1,j]) + ...` in increasing k, with the
+    multiply and the add kept separate, so the result is bit-identical to
+    `matmul` and to the scalar C++ reference for any tile configuration.
+
+    Parameters:
+        A: Type of `a` (inferred).
+        B: Type of `b` (inferred).
+        C: Type of `c` (inferred).
+        dtype: Element type; must match all three operands.
+        tile_m: Rows per register tile.
+        tile_n: Columns per register tile; a multiple of `width`.
+        width: SIMD lanes per accumulator.
+
+    Raises:
+        If the inner dimensions differ or `c` is not `M x N`.
+    """
+    comptime assert A.element_dtype == dtype, "matmul_tiled: dtype of a"
+    comptime assert B.element_dtype == dtype, "matmul_tiled: dtype of b"
+    comptime assert C.element_dtype == dtype, "matmul_tiled: dtype of c"
+    comptime assert tile_m > 0 and tile_n > 0 and width > 0
+    comptime assert (
+        tile_n % width == 0
+    ), "matmul_tiled: tile_n must be a multiple of width"
+
+    var m = a.rows()
+    var k = a.cols()
+    var n = b.cols()
+    _require(b.rows() == k, "matmul_tiled: inner dimensions differ")
+    _require(
+        c.rows() == m and c.cols() == n,
+        "matmul_tiled: output shape is not M x N",
+    )
+
+    for i0 in range(0, m, tile_m):
+        var h = min(tile_m, m - i0)
+        for j0 in range(0, n, tile_n):
+            var w = min(tile_n, n - j0)
+            if h == tile_m and w == tile_n:
+                _matmul_micro[dtype, tile_m, tile_n, width](a, b, c, i0, j0, k)
+            else:
+                _matmul_edge[dtype, width](a, b, c, i0, j0, h, w, k)
+
+
+@always_inline
+def _matmul_micro[
+    dtype: DType,
+    tile_m: Int,
+    tile_n: Int,
+    width: Int,
+    A: TensorLike,
+    B: TensorLike,
+    C: TensorLike,
+](a: A, b: B, mut c: C, i0: Int, j0: Int, k: Int):
+    """One full `tile_m x tile_n` block, accumulated in registers."""
+    comptime nv = tile_n // width
+    var acc = Array[SIMD[dtype, width], tile_m * nv](fill=0)
+    for kk in range(k):
+        var bv = Array[SIMD[dtype, width], nv](fill=0)
+        comptime for v in range(nv):
+            bv[v] = rebind[SIMD[dtype, width]](
+                b.load[width](kk, j0 + v * width)
+            )
+        comptime for r in range(tile_m):
+            var av = SIMD[dtype, width](
+                rebind[Scalar[dtype]](a.load[1](i0 + r, kk))
+            )
+            comptime for v in range(nv):
+                acc[r * nv + v] = acc[r * nv + v] + av * bv[v]
+    comptime for r in range(tile_m):
+        comptime for v in range(nv):
+            c.store[width](
+                i0 + r,
+                j0 + v * width,
+                rebind[SIMD[C.element_dtype, width]](acc[r * nv + v]),
+            )
+
+
+def _matmul_edge[
+    dtype: DType, width: Int, A: TensorLike, B: TensorLike, C: TensorLike
+](a: A, b: B, mut c: C, i0: Int, j0: Int, h: Int, w: Int, k: Int):
+    """A partial block at the bottom or right edge, one row at a time."""
+    for i in range(i0, i0 + h):
+        var j = j0
+        while j < j0 + w:
+            c.store[1](i, j, 0)
+            j += 1
+        for kk in range(k):
+            var alpha = rebind[Scalar[dtype]](a.load[1](i, kk))
+            var av = SIMD[dtype, width](alpha)
+            j = j0
+            while j + width <= j0 + w:
+                var cv = rebind[SIMD[dtype, width]](c.load[width](i, j))
+                var bv = rebind[SIMD[dtype, width]](b.load[width](kk, j))
+                c.store[width](
+                    i, j, rebind[SIMD[C.element_dtype, width]](cv + av * bv)
+                )
+                j += width
+            while j < j0 + w:
+                var cs = rebind[Scalar[dtype]](c.load[1](i, j))
+                var bs = rebind[Scalar[dtype]](b.load[1](kk, j))
+                c.store[1](
+                    i, j, rebind[Scalar[C.element_dtype]](cs + alpha * bs)
+                )
+                j += 1
 
 
 def conv2d[

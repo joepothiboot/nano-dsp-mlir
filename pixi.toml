@@ -7,7 +7,12 @@ platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 mojo = "1.1.*"
 
 [tasks]
-test-mojo = "mojo run -I mojo mojo/tests/test_kernels.mojo"
-bench = "mojo run -I mojo benchmarks/bench_kernels.mojo"
+# --fp-mode contract=off: Mojo fuses `a + b * c` into an FMA by default; the
+# bit-exact tests (and the C++ reference, built with -ffp-contract=off) need
+# the multiply and the add rounded separately.
+test-kernels = "mojo run --fp-mode contract=off -I mojo mojo/tests/test_kernels.mojo"
+test-layout = "mojo run --fp-mode contract=off -I mojo mojo/tests/test_layout.mojo"
+test-mojo = { depends-on = ["test-kernels", "test-layout"] }
+bench = "mojo run --fp-mode contract=off -I mojo benchmarks/bench_kernels.mojo"
 test-reference = { cmd = "mkdir -p build && c++ -std=c++20 -O2 -ffp-contract=off -Wall -Wextra -o build/test_reference reference/test_reference.cpp && build/test_reference" }
 test-mlir = "./test.sh"

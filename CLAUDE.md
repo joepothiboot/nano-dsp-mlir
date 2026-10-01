@@ -22,7 +22,9 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
   unscheduled results bit for bit)
 - `mojo/nanodsp/` — Mojo package: `Tensor[dtype]` + SIMD `add`/`relu`/
   `matmul`/`conv2d` (`kernels.mojo`) and `qmatmul` (`quant.mojo`) with the
-  same semantics as the dialect ops
+  same semantics as the dialect ops; `TensorLike`/`TensorView`
+  (`layout.mojo`) and the generic `matmul_tiled` (see
+  `docs/mojo-api-design.md`)
 - `mojo/tests/` — golden (same values as `test/Integration/`) and
   differential (SIMD vs naive loop nest) tests
 - `reference/` — header-only scalar C++ oracle + golden-value test
@@ -58,7 +60,9 @@ pixi run bench           # Mojo kernel benchmarks
   kernel, a C++ reference, and the same golden values in all three places.
 - Kernels keep multiply and add unfused and the reduction order of the naive
   loop nest, so they can be compared bit-exactly; the C++ reference is built
-  with `-ffp-contract=off` for the same reason.
+  with `-ffp-contract=off` and Mojo with `--fp-mode contract=off` (Mojo's
+  default fuses into FMA) for the same reason. Mojo kernels tile only output
+  dims, never the reduction.
 - Stage 3 schedules must stay bit-exact: register tiles keep reduction dims at
   1 and vectorize to separate `mulf`/`addf` (no `vector.contract`, no FMA).
   Any schedule change must keep `test/Integration/Schedule/bit-exact.mlir`

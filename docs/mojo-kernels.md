@@ -20,8 +20,10 @@ var b = Tensor[DType.float32]([3, 2], fill=1.0)
 var c = matmul(a, b)          # raises on a shape mismatch
 ```
 
-- `Tensor[dtype]` is an owned, contiguous, row-major buffer plus a shape.
-  There are no strides, views or broadcasting, because the dialect has none.
+- `Tensor[dtype]` is an owned, contiguous, row-major buffer plus a shape,
+  with no broadcasting, because the dialect has none. `Tensor.view()`
+  borrows it as a strided `TensorView`, and the generic `matmul_tiled` runs
+  on either; see [`mojo-api-design.md`](mojo-api-design.md).
 - Kernels are generic over `dtype`. The SIMD width comes from
   `simd_width_of[dtype]()` at compile time, so the same source compiles to
   NEON on Apple silicon and AVX on x86.
@@ -39,6 +41,7 @@ remainder with a scalar tail:
 | --------- | --------------- | ---------------------------------------- |
 | add, relu | flat index      | load, op, store                          |
 | matmul    | N (columns)     | `c[i, :] += a[i, k] * b[k, :]` (i-k-j)   |
+| tiled     | N, per tile     | register tile `acc += a[i, k] * b[k, j]` |
 | conv2d    | F (filters)     | `out[n, y, x, :] += in[...] * f[..., :]` |
 
 matmul and conv2d share one helper, `_axpy`. It keeps multiply and add
@@ -46,27 +49,35 @@ matmul and conv2d share one helper, `_axpy`. It keeps multiply and add
 matmul; kh, kw, c for conv), which is also the order `linalg.generic` uses
 after `-convert-linalg-to-loops`. That means results can be compared for
 exact equality, not just within a tolerance. The C++ reference is built with
-`-ffp-contract=off` so the compiler doesn't fuse `acc += a * b` into an FMA.
+`-ffp-contract=off` so the compiler doesn't fuse `acc += a * b` into an FMA,
+and the Mojo tasks in `pixi.toml` pass `--fp-mode contract=off` for the same
+reason: Mojo's default is `contract=fast`, which does fuse them. The
+integer-valued tests below cannot detect that; the inexact inputs in
+`test_layout.mojo` can (see
+[`mojo-api-design.md`](mojo-api-design.md#mojo-fuses-multiply-add-unless-told-not-to)).
 
-📊 Untiled throughput on an Apple M2 (`pixi run bench`, best of 3-5 runs, one
-core):
+📊 Throughput on an Apple M2 (`pixi run bench`, best of 3-5 reps, one run,
+one core, `--fp-mode contract=off`):
 
-| Shape                       | Time    | GFLOP/s |
-| --------------------------- | ------- | ------- |
-| matmul 256 x 256 x 256      | 1.51 ms | 22.2    |
-| matmul 512 x 512 x 512      | 14.4 ms | 18.6    |
-| conv2d 56 x 56 x 64 -> 64   | 13.6 ms | 15.8    |
-| conv2d 28 x 28 x 128 -> 128 | 9.7 ms  | 20.6    |
+| Shape                                | Time     | GFLOP/s |
+| ------------------------------------ | -------- | ------- |
+| matmul 256 x 256 x 256               | 1.63 ms  | 20.6    |
+| matmul 512 x 512 x 512               | 15.06 ms | 17.8    |
+| matmul_tiled 4 x 16, 512 x 512 x 512 | 5.73 ms  | 46.9    |
+| conv2d 56 x 56 x 64 -> 64            | 12.4 ms  | 17.3    |
+| conv2d 28 x 28 x 128 -> 128          | 10.1 ms  | 19.8    |
 
-Throughput drops at 512, most likely because a row of `b` stops staying in
-L1 across the k loop; Stage 3 tiling is meant to confirm and fix that.
-
-This is untiled on purpose. Cache tiling is what Stage 3 derives from the
-machine model, and the untiled kernel is the baseline it has to beat.
+The untiled `matmul` drops at 512, most likely because a row of `b` stops
+staying in L1 across the k loop. It stays untiled on purpose, as the
+baseline. `matmul_tiled` adds a register tile over i and j only (never k, to
+stay bit-exact) and does not drop; it is not cache-blocked yet. The full
+table, including view operands, is in
+[`mojo-api-design.md`](mojo-api-design.md#-performance).
 
 ## 🧪 Tests
 
-`mojo/tests/test_kernels.mojo` has two kinds of test:
+`mojo/tests/test_kernels.mojo` (`pixi run test-kernels`) has two kinds of
+test:
 
 - **Golden:** the same inputs and expected outputs as `test/Integration/`
   (and `reference/test_reference.cpp`).
@@ -77,10 +88,14 @@ machine model, and the untiled kernel is the baseline it has to beat.
 Error paths (broadcast attempts, inner-dimension mismatch, channel mismatch)
 are checked with `assert_raises`.
 
+`mojo/tests/test_layout.mojo` (`pixi run test-layout`) covers views and
+`matmul_tiled`; `pixi run test-mojo` runs both files.
+
 ## 🔜 Next
 
-- Tiled `matmul` with the tile sizes from `docs/02-tiling-model.md`, so the
-  hand-written and compiler-derived schedules can be compared directly.
+- Cache blocking for `matmul_tiled` with the tile sizes from
+  `docs/02-tiling-model.md`, so the hand-written and compiler-derived
+  schedules can be compared directly.
 - `parallelize` over output rows.
 - A benchmark table: MLIR (untiled / scheduled), Mojo, and C++ on the same
   shapes.
