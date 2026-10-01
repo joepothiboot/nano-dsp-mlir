@@ -135,33 +135,54 @@ struct NanoDSPEmitSchedulePass
 
 } // namespace
 
-// Bufferize, then the upstream lowering to the LLVM dialect. The vector
+// Bufferize, then the upstream lowering to the LLVM dialect. Function
+// arguments and results become identity-layout memrefs, so a kernel with
+// llvm.emit_c_interface is callable from C with a plain descriptor struct
+// (see test/Hexagon/harness.cpp). The vector
 // passes are no-ops on unscheduled (scalar-loop) IR, so this pipeline serves
 // both the scheduled and the unscheduled path.
-static constexpr char kLowerToLLVM[] =
-    "one-shot-bufferize{bufferize-function-boundaries},"
-    "buffer-deallocation-pipeline,"
-    "convert-linalg-to-loops,"
-    "func.func(lower-vector-multi-reduction),"
-    "convert-vector-to-scf,"
-    "lower-affine,"
-    "convert-scf-to-cf,"
-    "expand-strided-metadata,"
-    "lower-affine,"
-    "convert-vector-to-llvm,"
-    "convert-arith-to-llvm,"
-    "finalize-memref-to-llvm,"
-    "convert-func-to-llvm,"
-    "convert-cf-to-llvm,"
-    "convert-ub-to-llvm,"
-    "reconcile-unrealized-casts";
+namespace {
+struct LowerToLLVMOptions : public PassPipelineOptions<LowerToLLVMOptions> {
+  Option<bool> genericAlloc{
+      *this, "generic-alloc",
+      llvm::cl::desc(
+          "Allocate through _mlir_memref_to_llvm_alloc/_free, which the "
+          "embedding program provides, instead of calling malloc directly. "
+          "Needed on 32-bit targets such as Hexagon: index (and therefore "
+          "the allocation size) stays 64-bit, which does not match a 32-bit "
+          "libc's malloc(size_t)."),
+      llvm::cl::init(false)};
+};
+} // namespace
+
+static std::string lowerToLLVMPipeline(bool genericAlloc) {
+  return std::string("one-shot-bufferize{bufferize-function-boundaries "
+                     "function-boundary-type-conversion=identity-layout-map},"
+                     "buffer-deallocation-pipeline,"
+                     "convert-linalg-to-loops,"
+                     "func.func(lower-vector-multi-reduction),"
+                     "convert-vector-to-scf,"
+                     "lower-affine,"
+                     "convert-scf-to-cf,"
+                     "expand-strided-metadata,"
+                     "lower-affine,"
+                     "convert-vector-to-llvm,"
+                     "convert-arith-to-llvm,") +
+         (genericAlloc ? "finalize-memref-to-llvm{use-generic-functions},"
+                       : "finalize-memref-to-llvm,") +
+         "convert-func-to-llvm,"
+         "convert-cf-to-llvm,"
+         "convert-ub-to-llvm,"
+         "reconcile-unrealized-casts";
+}
 
 void mlir::nanodsp::registerNanoDSPPipelines() {
-  PassPipelineRegistration<>(
+  PassPipelineRegistration<LowerToLLVMOptions>(
       "nanodsp-lower-to-llvm",
       "Bufferize and lower linalg/scf/vector on tensors to the LLVM dialect.",
-      [](OpPassManager &pm) {
-        if (failed(parsePassPipeline(kLowerToLLVM, pm)))
+      [](OpPassManager &pm, const LowerToLLVMOptions &options) {
+        if (failed(parsePassPipeline(lowerToLLVMPipeline(options.genericAlloc),
+                                     pm)))
           llvm::report_fatal_error("invalid nanodsp-lower-to-llvm pipeline");
       });
 }

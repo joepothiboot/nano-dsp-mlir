@@ -26,6 +26,9 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
 - `mojo/tests/` — golden (same values as `test/Integration/`) and
   differential (SIMD vs naive loop nest) tests
 - `reference/` — header-only scalar C++ oracle + golden-value test
+- `docker/hexagon/`, `scripts/run-hexagon.sh`, `test/Hexagon/` — emulated Hexagon V68
+  (HVX) run of the kernels, bit-checked against `reference/`; needs Docker and
+  is not part of `check-nanodsp` (see `docs/hexagon-target.md`)
 - `benchmarks/` — Mojo kernel throughput; MLIR/C++ comparison planned
 - `docs/` — design notes (the README index says which exist)
 
