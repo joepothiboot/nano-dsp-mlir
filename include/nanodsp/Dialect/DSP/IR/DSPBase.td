@@ -15,6 +15,10 @@ def DSP_Dialect : Dialect {
     to `linalg.generic` (L2), not to be optimized in place.
   }];
   let cppNamespace = "::mlir::nanodsp";
+  let useDefaultAttributePrinterParser = 1;
+  let extraClassDeclaration = [{
+    void registerAttributes();
+  }];
 }
 
 //===----------------------------------------------------------------------===//

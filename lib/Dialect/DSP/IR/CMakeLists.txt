@@ -7,6 +7,7 @@ add_mlir_dialect_library(NanoDSPDialect
 
   DEPENDS
   MLIRDSPOpsIncGen
+  MLIRDSPAttrsIncGen
 
   LINK_LIBS PUBLIC
   MLIRIR
