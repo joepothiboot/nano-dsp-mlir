@@ -161,7 +161,12 @@ static std::string lowerToLLVMPipeline(bool genericAlloc) {
                      "buffer-deallocation-pipeline,"
                      "convert-linalg-to-loops,"
                      "func.func(lower-vector-multi-reduction),"
-                     "convert-vector-to-scf,"
+                     // full-unroll: lower n-D transfers to 1-D ones in
+                     // place. The default path stages them through a
+                     // memref.alloca inside the innermost loop; with no
+                     // stack restore that grows the stack every iteration
+                     // and overflows it on larger tiled kernels.
+                     "convert-vector-to-scf{full-unroll=true},"
                      "lower-affine,"
                      "convert-scf-to-cf,"
                      "expand-strided-metadata,"
