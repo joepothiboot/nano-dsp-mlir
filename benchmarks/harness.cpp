@@ -11,8 +11,9 @@
 //   harness --json <path>        check, time, write the "benchmarks" array
 //
 // Timing: one warmup call, then the call count per sample is doubled until a
-// sample takes at least --min-time seconds; the reported time is the best
-// (minimum) per-call time over --samples samples. Single thread. Each MLIR
+// sample takes at least --min-time seconds; report the best, median, and
+// sample standard deviation of per-call times over --samples samples. Rates
+// use the best sample. Single thread. Each MLIR
 // call returns a freshly allocated result (malloc), freed inside the timed
 // loop, just as the reference allocates its result std::vector.
 //
@@ -30,6 +31,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -186,7 +188,7 @@ struct Impl {
 
 struct Case {
   std::string op, shape;
-  double flops; // f32 flops, or int ops (2 per multiply-accumulate) for int8
+  double ops; // floating-point operations, or int ops for qmatmul
   double bytes; // compulsory traffic: every operand read once, result written
                 // once
   std::vector<Impl> impls;
@@ -310,13 +312,13 @@ static std::vector<Case> make_cases(Inputs &in) {
     Tensor &x = in.f.emplace_back(tensor4({1, hw, hw, c}, 0));
     Tensor &w = in.f.emplace_back(tensor4({3, 3, c, f}, 2));
     const double o = double(hw - 2);
-    const double flops = 2 * o * o * double(f) * 9 * double(c);
+    const double ops = 2 * o * o * double(f) * 9 * double(c);
     const double bytes =
         4 * (double(hw * hw * c) + double(9 * c * f) + o * o * double(f));
     cases.push_back({"conv2d",
                      std::to_string(hw) + "x" + std::to_string(hw) + "x" +
                          std::to_string(c) + "->" + std::to_string(f),
-                     flops, bytes,
+                     ops, bytes,
                      impls_for(set, x.data, x.shape, w.data, w.shape,
                                [&x, &w] { return conv2d(x, w); },
                                reorder_bound(x, w))});
@@ -343,6 +345,8 @@ static std::vector<Case> make_cases(Inputs &in) {
 
 struct Timing {
   double best_ns;
+  double median_ns;
+  double sample_stddev_ns;
   long iterations; // calls per sample
   int samples;
 };
@@ -364,10 +368,27 @@ static Timing time_best(const std::function<void()> &f, int samples,
     iters *= 2;
     t = seconds(f, iters);
   }
-  double best = t / double(iters);
+  std::vector<double> sample_ns;
+  sample_ns.reserve(samples);
+  sample_ns.push_back(t / double(iters) * 1e9);
   for (int s = 1; s < samples; ++s)
-    best = std::min(best, seconds(f, iters) / double(iters));
-  return {best * 1e9, iters, samples};
+    sample_ns.push_back(seconds(f, iters) / double(iters) * 1e9);
+
+  const double best = *std::min_element(sample_ns.begin(), sample_ns.end());
+  std::vector<double> ordered = sample_ns;
+  std::sort(ordered.begin(), ordered.end());
+  const double median = samples % 2
+                            ? ordered[samples / 2]
+                            : (ordered[samples / 2 - 1] + ordered[samples / 2]) / 2;
+  const double mean =
+      std::accumulate(sample_ns.begin(), sample_ns.end(), 0.0) / samples;
+  double squared_deviations = 0;
+  for (double sample : sample_ns)
+    squared_deviations += (sample - mean) * (sample - mean);
+  const double stddev = samples > 1
+                            ? std::sqrt(squared_deviations / (samples - 1))
+                            : 0;
+  return {best, median, stddev, iters, samples};
 }
 
 // ---------------------------------------------------------------------------
@@ -429,34 +450,37 @@ int main(int argc, char **argv) {
   if (json)
     std::fprintf(json, "[\n");
   bool first = true;
-  std::printf("\n%-8s %-14s %-15s %-12s %12s %10s\n", "op", "shape", "impl",
-              "config", "best (us)", "GFLOP/s");
+  std::printf("\n%-7s %-13s %-14s %-10s %10s %10s %8s\n", "op", "shape",
+              "impl", "config", "best us", "median us", "rate");
   for (auto &c : cases)
     for (auto &impl : c.impls) {
       std::string name = c.op + "/" + c.shape + "/" + impl.impl;
       if (!filter.empty() && name.find(filter) == std::string::npos)
         continue;
       Timing t = time_best(impl.run, samples, min_time);
-      const double gflops = c.flops / t.best_ns;
-      std::printf("%-8s %-14s %-15s %-12s %12.2f %10.2f\n", c.op.c_str(),
-                  c.shape.c_str(), impl.impl.c_str(),
-                  impl.impl == "cpp-ref" ? "-" : impl.config.c_str(),
-                  t.best_ns / 1e3, gflops);
+      const double rate = c.ops / t.best_ns;
+      const char *rate_unit = c.op == "qmatmul" ? "GOP/s" : "GFLOP/s";
+        std::printf("%-7s %-13s %-14s %-10s %10.2f %10.2f %8.2f %s\n",
+              c.op.c_str(), c.shape.c_str(), impl.impl.c_str(),
+              impl.impl == "cpp-ref" ? "-" : impl.config.c_str(),
+              t.best_ns / 1e3, t.median_ns / 1e3, rate, rate_unit);
       std::fflush(stdout);
       if (!json)
         continue;
       std::fprintf(json,
                    "%s    {\"name\": \"%s\", \"op\": \"%s\", \"shape\": "
                    "\"%s\", \"impl\": \"%s\", \"config\": \"%s\",\n"
-                   "     \"real_time\": %.1f, \"time_unit\": \"ns\", "
+                   "     \"real_time\": %.1f, \"median_time\": %.1f, "
+                   "\"sample_stddev\": %.1f, \"time_unit\": \"ns\", "
                    "\"aggregate\": \"min\", \"iterations\": %ld, "
                    "\"samples\": %d,\n"
-                   "     \"flops\": %.0f, \"gflops\": %.3f, \"bytes\": %.0f, "
+                   "     \"ops\": %.0f, \"rate\": %.3f, \"rate_unit\": \"%s\", "
+                   "\"bytes\": %.0f, "
                    "\"intensity\": %.3f, \"checked\": \"%s\"}",
                    first ? "" : ",\n", name.c_str(), c.op.c_str(),
                    c.shape.c_str(), impl.impl.c_str(), impl.config.c_str(),
-                   t.best_ns, t.iterations, t.samples, c.flops, gflops,
-                   c.bytes, c.flops / c.bytes,
+                   t.best_ns, t.median_ns, t.sample_stddev_ns, t.iterations,
+                   t.samples, c.ops, rate, rate_unit, c.bytes, c.ops / c.bytes,
                    impl.checked == Checked::BitExact ? "bit-exact"
                                                      : "within-bound");
       first = false;

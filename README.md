@@ -95,7 +95,8 @@ analytical working-set model (`lib/Schedule/TileSizeModel.cpp`) that solves
 for the largest tile that fits `α × L1d`, then snaps to register-width
 multiples ([`docs/02-tiling-model.md`](docs/02-tiling-model.md)). Validating it
 against a brute-force sweep, with a model-vs-measured comparison in
-`docs/03-results.md`, is Stage 5 and not done yet.
+`docs/03-results.md`, remains future work; that document currently records the
+first cross-implementation kernel measurements, not a tile-model validation.
 
 ---
 
@@ -122,7 +123,7 @@ nano-dsp-mlir/
 ├── reference/                # scalar C++ oracle (header-only) + golden-value test
 ├── docker/hexagon/           # Hexagon cross toolchain + qemu image
 ├── scripts/                  # demo page generator, run-hexagon.sh
-├── benchmarks/               # kernel throughput (MLIR/C++ side-by-side planned)
+├── benchmarks/               # Mojo + MLIR/C++ kernel benchmarks
 ├── docs/                     # design notes
 ├── pixi.toml                 # Mojo toolchain + task runner
 └── test.sh                   # configure + build + run check-nanodsp
@@ -209,7 +210,11 @@ build/bin/nanodsp-opt input.mlir \
 - `-nanodsp-lower-to-llvm` bufferizes and runs the upstream lowering to the
   LLVM dialect. Drop `-nanodsp-optimize` to get the unscheduled scalar loops.
 
-The benchmark sweep described above is planned (Stage 5).
+The Stage 5 benchmark harness compares the scalar C++ reference with untiled
+and scheduled MLIR kernels, and `pixi run bench` measures the Mojo kernels.
+The current measured results are in [`docs/03-results.md`](docs/03-results.md),
+with detailed harness methodology in [`benchmarks/README.md`](benchmarks/README.md).
+A broader schedule/tile sweep and model-vs-measured analysis remain future work.
 
 ### 🖥️ Demo page
 
@@ -280,7 +285,7 @@ The MLIR-vs-C++ benchmark harness (`pixi run bench-check`,
 | 3     | Tiling + vectorization (Transform dialect schedule)      | ✅ done, bit-exact (`lib/Schedule/`, `test/Schedule/`)            |
 | 4     | Bufferization + `linalg → scf → vector → LLVM`           | ✅ done (upstream passes, see `test/Integration/end-to-end.mlir`) |
 | L     | Local memory: VTCM promotion + double-buffered DMA       | ✅ done, functional only (`docs/scratchpad-dma.md`)               |
-| 5     | Benchmark harness                                        | 🚧 started: Mojo kernels only (`benchmarks/`)                     |
+| 5     | Benchmark harness + cross-implementation measurements    | ✅ harnesses and first M2 comparison (`benchmarks/`)              |
 | M     | Mojo kernel library + C++ reference oracle               | ✅ done (`mojo/`, `reference/`; Mojo 1.1)                         |
 | 6     | (planned) DSL frontend polish, autotuning sweep write-up | ⏳ not started                                                    |
 
@@ -290,6 +295,7 @@ The MLIR-vs-C++ benchmark harness (`pixi run bench-check`,
 
 Docs that exist:
 
+- [`docs/03-results.md`](docs/03-results.md): first Mojo/MLIR/C++ measurements and limitations
 - [`docs/mojo-kernels.md`](docs/mojo-kernels.md): the Mojo library: design, SIMD strategy, how it's tested
 - [`docs/mojo-api-design.md`](docs/mojo-api-design.md): the Mojo `TensorLike` trait, borrowed views and origins, compile-time tiles, and why only i/j are tiled
 - [`docs/02-tiling-model.md`](docs/02-tiling-model.md): the working-set derivation
@@ -303,7 +309,6 @@ Planned:
 
 - [`docs/00-architecture.md`](docs/00-architecture.md): full Stage 1 plan and both judgment-call tradeoffs
 - [`docs/01-ir-contracts.md`](docs/01-ir-contracts.md): the L0–L5 invariant table
-- [`docs/03-results.md`](docs/03-results.md): sweep plots, model vs. measured
 - [`docs/06-amendments.md`](docs/06-amendments.md): deviations from the original plan, and why
 - [`docs/07-mlir-for-js-devs.md`](docs/07-mlir-for-js-devs.md): MLIR concepts explained via JS/Babel analogies
 - [`docs/architecture.excalidraw`](docs/architecture.excalidraw): the diagram above, editable

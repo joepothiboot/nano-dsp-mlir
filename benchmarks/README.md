@@ -2,7 +2,8 @@
 
 Two harnesses live here:
 
-- `bench_kernels.mojo`: throughput of the Mojo kernels (`pixi run bench`).
+- `bench_kernels.mojo`: allocation-inclusive Mojo API timings and tiled
+  matmul timings (`pixi run bench`).
 - `kernels.mlir` + `harness.cpp` + `ceilings.cpp`: the Stage 5 comparison of
   MLIR-compiled kernels, untiled and scheduled, against the scalar C++
   reference, with measured roofline ceilings. The rest of this file is about
@@ -43,6 +44,15 @@ Three implementations of each:
 | `cpp-ref`        | `clang++ -O3 -ffp-contract=off` | `reference/nanodsp_ref.h` called directly                                            |
 | `mlir-untiled`   | `none`                          | `nanodsp-opt -convert-dsp-to-linalg -nanodsp-lower-to-llvm`                          |
 | `mlir-scheduled` | `host-neon`                     | same, plus `-nanodsp-optimize=target=host-neon` (the `TargetModel`-derived schedule) |
+
+`pixi run bench` separately measures the Mojo implementation on the same
+shapes and deterministic input patterns. It reports `matmul`, `conv2d`, and
+`qmatmul` with result allocation included, plus 4×16 tiled matmul both with a
+fresh output allocation per call and with a reused output. Keep those tiled
+modes distinct: allocation-inclusive timings are the closer API-level
+comparison; reused-output timings isolate repeated calls more closely. The
+Mojo run is not linked into the C++ harness, so its measurements appear in
+terminal output rather than `results.json`.
 
 Both MLIR configurations then go through
 `mlir-translate --mlir-to-llvmir | opt -O3 | llc -O3 -filetype=obj`.
@@ -99,12 +109,25 @@ non-zero, and nothing is timed.
   which steers it to a performance core. macOS has no hard affinity, so this
   is a request, not a guarantee.
 - One warmup call. Then the calls per sample double until one sample takes at
-  least `--min-time` (default 0.05 s). The reported `real_time` is the best
-  (minimum) per-call time over `--samples` samples (default 10).
+  least `--min-time` (default 0.05 s). The JSON records the best (minimum),
+  median, and sample standard deviation of per-call times over `--samples`
+  samples (default 10). Console throughput uses the best time; use the median
+  and spread when comparing implementations.
+- The Mojo benchmark uses the same warmup, 50 ms minimum sample, 10 samples,
+  and timing statistics. Both harnesses are single-threaded.
 - Each MLIR call returns a freshly `malloc`ed result, which the timed loop
   frees. The reference allocates its result `std::vector` the same way.
-- The machine is not isolated: other processes add noise. The minimum is
-  the statistic least affected by it.
+- C++ and MLIR calls include result allocation. Ordinary Mojo kernels also
+  include allocation; tiled Mojo matmul reports both allocation and output
+  reuse.
+- The machine is not isolated: other processes add noise. The minimum is the
+  statistic least affected by it; compare the median and sample standard
+  deviation to judge how representative that best case is.
+
+The harnesses retain sample statistics but not every sample. Ten samples give
+only a rough view of variability, not a confidence interval. The recorded M2
+comparison is in
+[`docs/03-results.md`](../docs/03-results.md).
 
 ## 📏 Ceilings
 
@@ -180,12 +203,15 @@ measured values replaced by placeholders (`0.0`, `"..."`):
       "impl": "mlir-scheduled",
       "config": "host-neon",
       "real_time": 0.0,
+      "median_time": 0.0,
+      "sample_stddev": 0.0,
       "time_unit": "ns",
       "aggregate": "min",
       "iterations": 0,
       "samples": 10,
-      "flops": 268435456,
-      "gflops": 0.0,
+      "ops": 268435456,
+      "rate": 0.0,
+      "rate_unit": "GFLOP/s",
       "bytes": 3145728,
       "intensity": 85.333,
       "checked": "bit-exact"
@@ -196,19 +222,21 @@ measured values replaced by placeholders (`0.0`, `"..."`):
 
 Per benchmark:
 
-| Field                   | Meaning                                                                                                     |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `name`                  | `op/shape/impl`, unique within a run                                                                        |
-| `shape`                 | `MxNxK` for matmul and qmatmul; `HxWxC->F` for conv2d (batch 1, 3×3 filter, valid padding)                  |
-| `impl`                  | `cpp-ref`, `mlir-untiled` or `mlir-scheduled`; new implementations (Mojo, schedule sweeps) add values       |
-| `config`                | schedule or target that distinguishes runs of one `impl` (`none`, `host-neon`, ...)                         |
-| `real_time`             | best per-call time in `time_unit` (always `ns`); `aggregate` says it is a minimum                           |
-| `iterations`, `samples` | calls per timed sample, and number of samples                                                               |
-| `flops`                 | `2·M·N·K` (matmul), `2·OH·OW·F·9·C` (conv2d); for qmatmul the same count of integer multiply/add operations |
-| `gflops`                | `flops / real_time`, in GFLOP/s (GOP/s for qmatmul)                                                         |
-| `bytes`                 | compulsory traffic: each operand read once and the result written once, at the element size                 |
-| `intensity`             | `flops / bytes`, the roofline x-coordinate                                                                  |
-| `checked`               | `bit-exact`, or `within-bound` (see above); the reference is `bit-exact` by definition                      |
+| Field                   | Meaning                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- |
+| `name`                  | `op/shape/impl`, unique within a run                                                                  |
+| `shape`                 | `MxNxK` for matmul and qmatmul; `HxWxC->F` for conv2d (batch 1, 3×3 filter, valid padding)            |
+| `impl`                  | `cpp-ref`, `mlir-untiled` or `mlir-scheduled`; new implementations (Mojo, schedule sweeps) add values |
+| `config`                | schedule or target that distinguishes runs of one `impl` (`none`, `host-neon`, ...)                   |
+| `real_time`             | best per-call time in `time_unit` (always `ns`); `aggregate` says it is a minimum                     |
+| `median_time`           | median per-call time across samples, in `time_unit`                                                   |
+| `sample_stddev`         | sample standard deviation of per-call time, in `time_unit`                                            |
+| `iterations`, `samples` | calls per timed sample, and number of samples                                                         |
+| `ops`                   | `2·M·N·K` (matmul/qmatmul), `2·OH·OW·F·9·C` (conv2d); qmatmul counts integer multiply/add operations  |
+| `rate`, `rate_unit`     | `ops / real_time`; `GFLOP/s` for floating point and `GOP/s` for qmatmul                               |
+| `bytes`                 | compulsory traffic: each operand read once and the result written once, at the element size           |
+| `intensity`             | `ops / bytes`, the roofline x-coordinate                                                              |
+| `checked`               | `bit-exact`, or `within-bound` (see above); the reference is `bit-exact` by definition                |
 
 `bytes` is the minimum any implementation must move, not a measurement of
 what it does move. It places each kernel on the roofline; it doesn't say
