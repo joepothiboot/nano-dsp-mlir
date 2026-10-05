@@ -18,6 +18,15 @@
     overflow: auto;
     max-height: 400px;
   }
+  .road {
+    list-style: none;
+    margin: 0;
+    padding-left: 12px;
+    border-left: 2px solid #000;
+  }
+  .road .todo {
+    color: #666;
+  }
   section {
     margin-top: 2em;
   }
@@ -196,25 +205,25 @@
 
   <section aria-labelledby="road-h">
     <h2 id="road-h">Roadmap</h2>
-    <ul>
-      <li>Sep 12: project setup</li>
+    <ul class="road">
+      <li>✓ project setup</li>
       <li>
-        Sep 27: Mojo and C++
+        ✓ Mojo and C++
         <abbr
           title="Plain scalar implementations whose outputs the optimized code is compared against"
           >oracles</abbr
         >
       </li>
-      <li>Sep 29: tiling and vectorization, bit-exact</li>
+      <li>✓ tiling and vectorization, bit-exact</li>
       <li>
-        Sep 30:
+        ✓
         <abbr
           title="8-bit integer matmul; results are rescaled back to int8 in integer arithmetic"
           >int8 qmatmul</abbr
         >
       </li>
       <li>
-        Oct 1:
+        ✓
         <abbr title="Qualcomm DSP with 1024-bit Hexagon Vector eXtensions"
           >Hexagon HVX</abbr
         >
@@ -228,9 +237,9 @@
           >DMA</abbr
         >
       </li>
-      <li>Oct 3: Mojo vs MLIR benchmarks</li>
-      <li>
-        <b>Next:</b> CUDA +
+      <li>✓ Mojo vs MLIR benchmarks</li>
+      <li class="todo">
+        ☐ CUDA +
         <abbr title="Python-embedded language for writing GPU kernels"
           >Triton</abbr
         >
@@ -239,7 +248,7 @@
           >cuBLAS</abbr
         >)
       </li>
-      <li><b>Next:</b> PyTorch custom op and a small quantized MLP</li>
+      <li class="todo">☐ PyTorch custom op and a small quantized MLP</li>
     </ul>
   </section>
 
