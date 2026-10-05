@@ -100,8 +100,17 @@
     <span class="eyebrow">MLIR · LLVM · hardware-aware compilation</span>
     <h1>nano-dsp-mlir</h1>
     <p class="lede">
-      A small MLIR compiler for a tiny DSP dialect. It tiles and vectorizes each
-      op for a specific machine, using that machine's cache size and SIMD
+      A small
+      <abbr
+        title="Multi-Level IR: LLVM's framework for building compilers out of dialects"
+        >MLIR</abbr
+      >
+      compiler for a tiny DSP dialect. It tiles and vectorizes each op for a
+      specific machine, using that machine's cache size and
+      <abbr
+        title="Single instruction, multiple data: one instruction works on several numbers at once"
+        >SIMD</abbr
+      >
       registers, then proves the result didn't change by a single bit.
     </p>
     <div class="badges" id="badges"></div>
@@ -126,9 +135,17 @@
         <span class="eyebrow">Hardware-aware</span>
         <h2 id="tgt-h">Same program, different machine, different code</h2>
         <p class="sub">
-          Tile sizes come from a compile-time machine model. The register tile
-          fills the SIMD register file. The cache tile grows until its working
-          set reaches the cache budget.
+          Tile sizes come from a compile-time machine model. The
+          <abbr
+            title="The block of outputs one inner loop keeps in vector registers"
+            >register tile</abbr
+          >
+          fills the SIMD register file. The
+          <abbr
+            title="A bigger block of the loop nest sized to fit in the L1 data cache"
+            >cache tile</abbr
+          >
+          grows until its working set reaches the cache budget.
         </p>
       </div>
       <div class="seg" role="group" aria-label="Target machine" data-seg></div>
@@ -145,7 +162,12 @@
     </div>
     <div class="two">
       <div class="col">
-        <span class="col-label">Generated schedule (Transform dialect)</span>
+        <span class="col-label"
+          >Generated schedule (<abbr
+            title="MLIR dialect whose ops describe how to rewrite other IR, here tiling and vectorizing"
+            >Transform dialect</abbr
+          >)</span
+        >
         <pre class="code short" id="sched" tabindex="0"></pre>
       </div>
       <div class="col">
@@ -172,56 +194,53 @@
     </p>
   </section>
 
-  <section class="card" aria-labelledby="road-h">
-    <div class="card-head">
-      <div>
-        <span class="eyebrow">Roadmap</span>
-        <h2 id="road-h">Where it's going</h2>
-      </div>
-    </div>
-    <div class="roadmap">
-      <div class="step done">
-        <span class="st">Done</span><span class="nm">dsp dialect → linalg</span
-        ><span class="ds"
-          >add, relu, matmul, conv2d with verifiers and lowering</span
+  <section aria-labelledby="road-h">
+    <h2 id="road-h">Roadmap</h2>
+    <ul>
+      <li>Sep 12: project setup</li>
+      <li>
+        Sep 27: Mojo and C++
+        <abbr
+          title="Plain scalar implementations whose outputs the optimized code is compared against"
+          >oracles</abbr
         >
-      </div>
-      <div class="step done">
-        <span class="st">Done</span
-        ><span class="nm">Tiling + vectorization</span
-        ><span class="ds"
-          >Target-model-driven Transform schedules, bit-exact</span
+      </li>
+      <li>Sep 29: tiling and vectorization, bit-exact</li>
+      <li>
+        Sep 30:
+        <abbr
+          title="8-bit integer matmul; results are rescaled back to int8 in integer arithmetic"
+          >int8 qmatmul</abbr
         >
-      </div>
-      <div class="step done">
-        <span class="st">Done</span><span class="nm">Mojo + C++ oracles</span
-        ><span class="ds"
-          >Same ops, same golden values, three implementations</span
+      </li>
+      <li>
+        Oct 1:
+        <abbr title="Qualcomm DSP with 1024-bit Hexagon Vector eXtensions"
+          >Hexagon HVX</abbr
         >
-      </div>
-      <div class="step done">
-        <span class="st">Done</span><span class="nm">int8 qmatmul</span
-        ><span class="ds"
-          >Zero points, fixed-point requantization, saturation</span
+        target,
+        <abbr
+          title="Small fast local memory (Hexagon's VTCM) managed by the program, not a cache"
+          >scratchpad</abbr
         >
-      </div>
-      <div class="step">
-        <span class="st">Next</span><span class="nm">Hexagon HVX target</span
-        ><span class="ds">1024-bit vectors, VTCM, run under QEMU</span>
-      </div>
-      <div class="step">
-        <span class="st">Planned</span><span class="nm">Scratchpad + DMA</span
-        ><span class="ds">Double-buffered local memory lowering</span>
-      </div>
-      <div class="step">
-        <span class="st">Planned</span><span class="nm">CUDA + Triton</span
-        ><span class="ds">sm_80 kernels benchmarked against cuBLAS</span>
-      </div>
-      <div class="step">
-        <span class="st">Planned</span><span class="nm">PyTorch custom op</span
-        ><span class="ds">TORCH_LIBRARY op and a small quantized MLP</span>
-      </div>
-    </div>
+        and
+        <abbr title="Direct memory access: copies data without the CPU doing it"
+          >DMA</abbr
+        >
+      </li>
+      <li>Oct 3: Mojo vs MLIR benchmarks</li>
+      <li>
+        <b>Next:</b> CUDA +
+        <abbr title="Python-embedded language for writing GPU kernels"
+          >Triton</abbr
+        >
+        (sm_80, vs
+        <abbr title="NVIDIA's hand-tuned GPU linear algebra library"
+          >cuBLAS</abbr
+        >)
+      </li>
+      <li><b>Next:</b> PyTorch custom op and a small quantized MLP</li>
+    </ul>
   </section>
 
   <footer id="footer"></footer>
