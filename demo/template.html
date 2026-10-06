@@ -1,3 +1,4 @@
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>nano-dsp-mlir</title>
 <style>
   body {
@@ -94,6 +95,83 @@
   .fill {
     height: 100%;
     background: #888;
+  }
+  .gpu-chart {
+    --series-ours: #2a78d6; /* categorical slot 1 */
+    --series-lib: #eb6834; /* categorical slot 2 */
+    --text-secondary: #555;
+    --grid: #ddd;
+    margin: 1em 0;
+    position: relative;
+  }
+  .gpu-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em 1.5em;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 0.75em;
+  }
+  .gpu-legend i {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 6px;
+    vertical-align: -1px;
+  }
+  .gpu-group {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0.75em 0 0.25em;
+  }
+  .gpu-row {
+    display: grid;
+    grid-template-columns: 5.5em 1fr;
+    align-items: center;
+    gap: 0.5em;
+    min-height: 28px;
+  }
+  .gpu-row .lbl {
+    font-size: 13px;
+    text-align: right;
+  }
+  .gpu-track {
+    position: relative;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(var(--grid), var(--grid)) left / 1px 100% no-repeat;
+  }
+  .gpu-bar {
+    flex-shrink: 0;
+    height: 20px;
+    min-width: 2px;
+    border-radius: 0 4px 4px 0;
+  }
+  .gpu-val {
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .gpu-tip {
+    position: absolute;
+    pointer-events: none;
+    background: #fff;
+    border: 1px solid #999;
+    padding: 4px 8px;
+    font-size: 13px;
+    white-space: nowrap;
+    display: none;
+    z-index: 1;
+  }
+  @media (max-width: 600px) {
+    .two {
+      grid-template-columns: 1fr;
+    }
+    .gpu-row {
+      grid-template-columns: 3.5em 1fr;
+    }
   }
   .mark {
     position: absolute;
@@ -215,6 +293,7 @@
         </p>
       </div>
     </div>
+    <div class="gpu-chart" id="gpu-chart" role="img"></div>
     <div class="runs" id="gpu-runs"></div>
     <p class="caption">
       Saved results of <code>pixi run bench-gpu</code>, not run when this page
@@ -465,6 +544,57 @@
 
     const ms = (ns) =>
       ns >= 1e6 ? `${(ns / 1e6).toFixed(2)} ms` : `${(ns / 1e3).toFixed(0)} µs`;
+    // Matmul 2048³ throughput per GPU, one linear axis. Values are labeled at
+    // each bar's tip; hover for time and how the output was checked. The list
+    // below the chart is its table view.
+    const big = (DATA.gpu || []).filter(
+      (r) => r.op === "matmul" && r.shape === "2048x2048x2048",
+    );
+    const chart = document.getElementById("gpu-chart");
+    if (big.length) {
+      const top = Math.max(...big.map((r) => r.rate));
+      const name = (r) =>
+        r.impl === "cublas" ? "cuBLAS" : r.impl.replace("mojo-gpu-", "");
+      const devices = [...new Set(big.map((r) => r.config))];
+      chart.setAttribute(
+        "aria-label",
+        "Matmul 2048³ throughput: " +
+          big.map((r) => `${r.config} ${name(r)} ${r.rate.toFixed(0)} GFLOP/s`).join(", "),
+      );
+      chart.innerHTML =
+        `<div class="gpu-legend"><span><i style="background:var(--series-ours)"></i>Mojo kernel, bit-exact</span>` +
+        `<span><i style="background:var(--series-lib)"></i>cuBLAS, within the error bound</span>` +
+        `<span>matmul 2048³, GFLOP/s, higher is faster</span></div>` +
+        devices
+          .map(
+            (d) =>
+              `<div class="gpu-group">${esc(d)}</div>` +
+              big
+                .filter((r) => r.config === d)
+                .map((r) => {
+                  const pct = (100 * r.rate) / top; // linear, from zero
+                  const color = r.impl === "cublas" ? "var(--series-lib)" : "var(--series-ours)";
+                  const tip = `${esc(d)} · ${esc(name(r))}: ${ms(r.median_time)} median, ${r.rate.toFixed(0)} GFLOP/s, ${esc(r.checked)}`;
+                  return `<div class="gpu-row" data-tip="${tip}"><span class="lbl">${esc(name(r))}</span><span class="gpu-track"><span class="gpu-bar" style="width:calc((100% - 48px) * ${(pct / 100).toFixed(4)});background:${color}"></span><span class="gpu-val">${Math.round(r.rate).toLocaleString("en-US")}</span></span></div>`;
+                })
+                .join(""),
+          )
+          .join("") +
+        `<div class="gpu-tip" id="gpu-tip"></div>`;
+      const tipEl = document.getElementById("gpu-tip");
+      chart.querySelectorAll(".gpu-row").forEach((row) => {
+        row.addEventListener("mousemove", (e) => {
+          const box = chart.getBoundingClientRect();
+          tipEl.innerHTML = row.dataset.tip;
+          tipEl.style.display = "block";
+          const x = Math.min(e.clientX - box.left + 12, box.width - tipEl.offsetWidth);
+          tipEl.style.left = `${Math.max(0, x)}px`;
+          tipEl.style.top = `${e.clientY - box.top + 14}px`;
+        });
+        row.addEventListener("mouseleave", () => (tipEl.style.display = "none"));
+      });
+    }
+
     document.getElementById("gpu-runs").innerHTML = (DATA.gpu || [])
       .map((r) => {
         const shape = r.shape.replace("2048x2048x2048", "2048³").replace("->", " → ");
