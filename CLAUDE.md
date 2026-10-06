@@ -28,7 +28,10 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
   `matmul`/`conv2d` (`kernels.mojo`) and `qmatmul` (`quant.mojo`) with the
   same semantics as the dialect ops; `TensorLike`/`TensorView`
   (`layout.mojo`) and the generic `matmul_tiled` (see
-  `docs/mojo-api-design.md`)
+  `docs/mojo-api-design.md`); `gpu.mojo` runs `matmul` (naive, tiled,
+  blocked) and `conv2d` on a GPU, bit-exact with the CPU kernels (see
+  `docs/mojo-gpu.md`). It is not re-exported from the package root, so the
+  CPU kernels don't need `max-core`
 - `mojo/tests/` — golden (same values as `test/Integration/`) and
   differential (SIMD vs naive loop nest) tests
 - `reference/` — header-only scalar C++ oracle + golden-value test
@@ -53,6 +56,8 @@ checkout lives under a directory containing spaces.
 pixi run test-mojo       # Mojo kernel tests (installs Mojo 1.1 via pixi)
 pixi run test-reference  # C++ reference golden tests
 pixi run bench           # Mojo kernel benchmarks
+pixi run test-gpu        # GPU kernels (needs a GPU; not in test-mojo or CI)
+pixi run bench-gpu       # GPU benchmark -> build/bench/results-gpu.json
 ```
 
 ## Conventions
@@ -66,7 +71,8 @@ pixi run bench           # Mojo kernel benchmarks
   loop nest, so they can be compared bit-exactly; the C++ reference is built
   with `-ffp-contract=off` and Mojo with `--fp-mode contract=off` (Mojo's
   default fuses into FMA) for the same reason. Mojo kernels tile only output
-  dims, never the reduction.
+  dims, never the reduction. GPU kernels may split the reduction into
+  consecutive chunks walked in order (shared-memory tiles), never reorder it.
 - Stage 3 schedules must stay bit-exact: register tiles keep reduction dims at
   1 and vectorize to separate `mulf`/`addf` (no `vector.contract`, no FMA).
   Any schedule change must keep `test/Integration/Schedule/bit-exact.mlir`
@@ -76,7 +82,9 @@ pixi run bench           # Mojo kernel benchmarks
 - Mojo is pinned to 1.1 in `pixi.toml`: `def` only (no `fn`), `comptime` not
   `alias`, stdlib imports as `std.*`, struct parameters as `Self.dtype`, and
   `unsafe_load`/`unsafe_store`/`unsafe_offset` on pointers. Keep builds free of
-  deprecation warnings.
+  deprecation warnings. GPU APIs come from the `max-core` package
+  (`from max.gpu import ...`, `from max.gpu.host import DeviceContext`);
+  kernel arguments must be fixed-width (`Int32`, not `Int`).
 - `dsp.qmatmul` requantizes in integer arithmetic only, rounding half up
   (TFLite single rounding); see `docs/quantization.md`. ODS `I32Attr`
   accessors return `uint32_t`: sign-extend explicitly when reading signed

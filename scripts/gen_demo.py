@@ -215,6 +215,14 @@ def main():
             tests = {"passed": int(passed[1]),
                      "total": int(passed[1]) + (int(failed[1]) if failed else 0)}
 
+    # GPU runs can't happen here (CI has no GPU): show the saved results of
+    # `pixi run bench-gpu`, each bit-checked against the CPU kernel when run.
+    gpu = []
+    for path in sorted((ROOT / "benchmarks" / "results").glob("gpu-*.json")):
+        for b in json.loads(path.read_text())["benchmarks"]:
+            if b["op"] == "conv2d" or b["shape"] == "2048x2048x2048":
+                gpu.append({k2: b[k2] for k2 in ("op", "shape", "impl", "config", "rate", "median_time", "checked")})
+
     commit = subprocess.run(["git", "-C", ROOT, "rev-parse", "--short", "HEAD"],
                             capture_output=True, text=True).stdout.strip()
     version = run([llc, "--version"])
@@ -227,6 +235,7 @@ def main():
         "levels": {"dsp": strip_comments(source), "linalg": linalg},
         "targets": targets,
         "proof": proof,
+        "gpu": gpu,
     }
 
     template = (ROOT / "demo" / "template.html").read_text()

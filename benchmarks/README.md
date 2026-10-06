@@ -1,9 +1,14 @@
 # Benchmarks ⏱️
 
-Two harnesses live here:
+Four harnesses live here:
 
 - `bench_kernels.mojo`: allocation-inclusive Mojo API timings and tiled
   matmul timings (`pixi run bench`).
+- `bench_gpu.mojo`: the Mojo GPU matmul and conv2d, bit-checked against the
+  CPU kernels before timing (`pixi run bench-gpu`). Saved runs are in
+  `results/`; see [`docs/mojo-gpu.md`](../docs/mojo-gpu.md).
+- `bench_cublas.py`: cuBLAS on the same matmul inputs, checked within the
+  reordering bound below; needs an NVIDIA GPU and CuPy.
 - `kernels.mlir` + `harness.cpp` + `ceilings.cpp`: the Stage 5 comparison of
   MLIR-compiled kernels, untiled and scheduled, against the scalar C++
   reference, with measured roofline ceilings. The rest of this file is about

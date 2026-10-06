@@ -67,7 +67,8 @@ general ranking.
 - These are call timings, not a complete model or application pipeline.
 - Scheduled conv2d changes reduction order. Its measured outputs fit the
   documented error bound but are not bit-exact.
-- No GPU is involved. These results are for the Apple M2 CPU's NEON path.
+- No GPU is involved. These results are for the Apple M2 CPU's NEON path;
+  GPU measurements are in [`06-gpu-results.md`](06-gpu-results.md).
 
 Detailed command options, correctness checks, and roofline methodology are in
 [`../benchmarks/README.md`](../benchmarks/README.md).

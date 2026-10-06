@@ -53,5 +53,8 @@ targets contains vector multiplies and adds and no FMA instruction.
   with a tree reduction. Run such a schedule through the bit-exact test
   before trusting it.
 - **Different bits from other implementations are expected in general**
-  (Mojo, CUDA, anything that uses FMA). The repo keeps them bit-exact only
-  by applying the same no-FMA, naive-order discipline everywhere.
+  (cuBLAS, anything that uses FMA or its own summation order). The repo
+  keeps its own implementations bit-exact, the Mojo GPU kernels included,
+  only by applying the same no-FMA, naive-order discipline everywhere
+  ([`mojo-gpu.md`](mojo-gpu.md)). cuBLAS is checked within the reordering
+  bound instead.

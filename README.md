@@ -1,8 +1,10 @@
 # nano-dsp-mlir ⚡
 
 A small MLIR compiler that lowers a tiny image/math DSL all the way down to
-hardware-aware LLVM IR. Built as a portfolio project for compiler roles
-focused on hardware optimization.
+hardware-aware LLVM IR, plus a Mojo kernel library for the same ops on CPU
+and GPU. Every implementation produces the same numbers, bit for bit. Built
+as a portfolio project for compiler and kernel-library roles focused on
+hardware optimization.
 
 🚀 **[Try the demo live](https://joepothiboot.github.io/nano-dsp-mlir/)**: traces
 a matmul from the `dsp` dialect to NEON and AVX2 machine code, with bit-exact
@@ -118,7 +120,7 @@ nano-dsp-mlir/
 │   └── Hexagon/              # on-target harness: kernels vs the C++ reference
 ├── schedules/                # hand-written Transform-dialect schedules
 ├── mojo/
-│   ├── nanodsp/              # Mojo package: Tensor[dtype] + SIMD kernels for the same ops
+│   ├── nanodsp/              # Mojo package: Tensor[dtype] + SIMD kernels; gpu.mojo for GPU
 │   └── tests/                # golden + differential tests
 ├── reference/                # scalar C++ oracle (header-only) + golden-value test
 ├── docker/hexagon/           # Hexagon cross toolchain + qemu image
@@ -150,6 +152,14 @@ two implementations because it tiles only the output dims. See
 That includes `dsp.qmatmul`, an int8 matmul with zero points and fixed-point
 requantization, the way DSP and NPU integer pipelines compute a quantized
 layer. See [`docs/quantization.md`](docs/quantization.md).
+
+The Mojo `matmul` and `conv2d` also run on a GPU (`mojo/nanodsp/gpu.mojo`),
+with the same bits: a naive, a shared-memory tiled, and a register-blocked
+matmul, all summing in the reference's order with multiply and add unfused.
+On an Apple M2 GPU the blocked matmul reaches 549 GFLOP/s at 2048³, and
+512³ runs in 0.89 ms against 5.75 ms for the best CPU kernel. NVIDIA T4 and
+cuBLAS numbers are pending. See [`docs/mojo-gpu.md`](docs/mojo-gpu.md) and
+[`docs/06-gpu-results.md`](docs/06-gpu-results.md).
 
 ---
 
@@ -274,6 +284,17 @@ The MLIR-vs-C++ benchmark harness (`pixi run bench-check`,
 `pixi run bench-mlir`) is described in
 [`benchmarks/README.md`](benchmarks/README.md).
 
+### 🖥️ GPU kernels (Mojo)
+
+```bash
+pixi run test-gpu        # GPU matmul and conv2d, bit for bit against the CPU kernels
+pixi run bench-gpu       # writes build/bench/results-gpu.json
+```
+
+Needs a GPU: Apple silicon (macOS 15+, Xcode with its Metal toolchain) or
+NVIDIA Turing and newer. Running on a free Colab or Kaggle T4, and the
+cuBLAS baseline, are described in [`docs/mojo-gpu.md`](docs/mojo-gpu.md).
+
 ---
 
 ## 📊 Project status
@@ -288,6 +309,7 @@ The MLIR-vs-C++ benchmark harness (`pixi run bench-check`,
 | 5     | Benchmark harness + cross-implementation measurements    | ✅ harnesses and first M2 comparison (`benchmarks/`)              |
 | M     | Mojo kernel library + C++ reference oracle               | ✅ done (`mojo/`, `reference/`; Mojo 1.1)                         |
 | 6     | (planned) DSL frontend polish, autotuning sweep write-up | ⏳ not started                                                    |
+| G     | Mojo GPU kernels: matmul (3 variants) + conv2d           | ✅ Apple M2, bit-exact (`docs/mojo-gpu.md`); NVIDIA T4 pending    |
 
 ---
 
@@ -296,6 +318,8 @@ The MLIR-vs-C++ benchmark harness (`pixi run bench-check`,
 Docs that exist:
 
 - [`docs/03-results.md`](docs/03-results.md): first Mojo/MLIR/C++ measurements and limitations
+- [`docs/mojo-gpu.md`](docs/mojo-gpu.md): the Mojo GPU kernels: API, why they stay bit-exact, how to run them on Apple silicon and a free T4
+- [`docs/06-gpu-results.md`](docs/06-gpu-results.md): Apple M2 GPU measurements; NVIDIA T4 and cuBLAS pending
 - [`docs/mojo-kernels.md`](docs/mojo-kernels.md): the Mojo library: design, SIMD strategy, how it's tested
 - [`docs/mojo-api-design.md`](docs/mojo-api-design.md): the Mojo `TensorLike` trait, borrowed views and origins, compile-time tiles, and why only i/j are tiled
 - [`docs/02-tiling-model.md`](docs/02-tiling-model.md): the working-set derivation

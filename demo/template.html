@@ -203,6 +203,26 @@
     </p>
   </section>
 
+  <section class="card" aria-labelledby="gpu-h">
+    <div class="card-head">
+      <div>
+        <span class="eyebrow">GPU</span>
+        <h2 id="gpu-h">The same numbers on a GPU</h2>
+        <p class="sub">
+          The Mojo matmul and conv2d run on the GPU too, and every output is
+          compared with the CPU kernel as raw 32-bit patterns before it is
+          timed.
+        </p>
+      </div>
+    </div>
+    <div class="runs" id="gpu-runs"></div>
+    <p class="caption">
+      Saved results of <code>pixi run bench-gpu</code>, not run when this page
+      was built (it is built without a GPU). Median times; throughput from the
+      best sample. NVIDIA T4 and cuBLAS numbers are pending.
+    </p>
+  </section>
+
   <section aria-labelledby="road-h">
     <h2 id="road-h">Roadmap</h2>
     <ul class="road">
@@ -239,16 +259,17 @@
       </li>
       <li>✓ Mojo vs MLIR benchmarks</li>
       <li class="todo">
-        ☐ CUDA +
-        <abbr title="Python-embedded language for writing GPU kernels"
-          >Triton</abbr
-        >
-        (sm_80, vs
+        ◐ Mojo GPU kernels (matmul, conv2d), bit-exact: Apple M2 done; NVIDIA
+        T4 vs
         <abbr title="NVIDIA's hand-tuned GPU linear algebra library"
           >cuBLAS</abbr
-        >)
+        >
+        pending
       </li>
-      <li class="todo">☐ PyTorch custom op and a small quantized MLP</li>
+      <li class="todo">
+        ☐ optional: the same matmul lowered by MLIR (<code>gpu</code> → NVVM →
+        PTX)
+      </li>
     </ul>
   </section>
 
@@ -439,6 +460,16 @@
         const res =
           r.differ === 0 ? "0 values differ" : `${fmt(r.differ)} values differ`;
         return `<div class="run ${cls}"><span class="who">${esc(r.name)}</span><span class="what">${esc(r.desc)}</span><span class="res">${res}</span></div>`;
+      })
+      .join("");
+
+    const ms = (ns) =>
+      ns >= 1e6 ? `${(ns / 1e6).toFixed(2)} ms` : `${(ns / 1e3).toFixed(0)} µs`;
+    document.getElementById("gpu-runs").innerHTML = (DATA.gpu || [])
+      .map((r) => {
+        const shape = r.shape.replace("2048x2048x2048", "2048³").replace("->", " → ");
+        const variant = r.impl.replace("mojo-gpu-", "").replace("mojo-gpu", "one thread per output");
+        return `<div class="run ok"><span class="who">${esc(r.op)} ${esc(shape)}</span><span class="what">${esc(variant)} · ${esc(r.config)} · ${ms(r.median_time)} · ${esc(r.checked).replace("-", "\u2011")}</span><span class="res">${r.rate.toFixed(0)} GFLOP/s</span></div>`;
       })
       .join("");
 
