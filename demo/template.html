@@ -209,9 +209,9 @@
         <span class="eyebrow">GPU</span>
         <h2 id="gpu-h">The same numbers on a GPU</h2>
         <p class="sub">
-          The Mojo matmul and conv2d run on the GPU too, and every output is
-          compared with the CPU kernel as raw 32-bit patterns before it is
-          timed.
+          The Mojo matmul and conv2d run on an Apple M2 and an NVIDIA T4 from
+          the same source, and every output is compared with the CPU kernel as
+          raw 32-bit patterns before it is timed.
         </p>
       </div>
     </div>
@@ -219,7 +219,8 @@
     <p class="caption">
       Saved results of <code>pixi run bench-gpu</code>, not run when this page
       was built (it is built without a GPU). Median times; throughput from the
-      best sample. NVIDIA T4 and cuBLAS numbers are pending.
+      best sample. On the T4 the blocked matmul reaches 49–58% of cuBLAS from 512³ up
+      (cuBLAS is checked within the reordering bound, not bit for bit).
     </p>
   </section>
 
@@ -258,13 +259,12 @@
         >
       </li>
       <li>✓ Mojo vs MLIR benchmarks</li>
-      <li class="todo">
-        ◐ Mojo GPU kernels (matmul, conv2d), bit-exact: Apple M2 done; NVIDIA
-        T4 vs
+      <li>
+        ✓ Mojo GPU kernels (matmul, conv2d), bit-exact on Apple M2 and NVIDIA
+        T4, vs
         <abbr title="NVIDIA's hand-tuned GPU linear algebra library"
           >cuBLAS</abbr
         >
-        pending
       </li>
       <li class="todo">
         ☐ optional: the same matmul lowered by MLIR (<code>gpu</code> → NVVM →

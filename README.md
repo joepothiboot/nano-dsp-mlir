@@ -157,8 +157,9 @@ The Mojo `matmul` and `conv2d` also run on a GPU (`mojo/nanodsp/gpu.mojo`),
 with the same bits: a naive, a shared-memory tiled, and a register-blocked
 matmul, all summing in the reference's order with multiply and add unfused.
 On an Apple M2 GPU the blocked matmul reaches 549 GFLOP/s at 2048³, and
-512³ runs in 0.89 ms against 5.75 ms for the best CPU kernel. NVIDIA T4 and
-cuBLAS numbers are pending. See [`docs/mojo-gpu.md`](docs/mojo-gpu.md) and
+512³ runs in 0.89 ms against 5.75 ms for the best CPU kernel. On a free
+NVIDIA T4 the same source stays bit-exact and the blocked matmul reaches
+1.9 TFLOP/s, 49–58% of cuBLAS from 512³ up. See [`docs/mojo-gpu.md`](docs/mojo-gpu.md) and
 [`docs/06-gpu-results.md`](docs/06-gpu-results.md).
 
 ---
@@ -309,7 +310,7 @@ cuBLAS baseline, are described in [`docs/mojo-gpu.md`](docs/mojo-gpu.md).
 | 5     | Benchmark harness + cross-implementation measurements    | ✅ harnesses and first M2 comparison (`benchmarks/`)              |
 | M     | Mojo kernel library + C++ reference oracle               | ✅ done (`mojo/`, `reference/`; Mojo 1.1)                         |
 | 6     | (planned) DSL frontend polish, autotuning sweep write-up | ⏳ not started                                                    |
-| G     | Mojo GPU kernels: matmul (3 variants) + conv2d           | ✅ Apple M2, bit-exact (`docs/mojo-gpu.md`); NVIDIA T4 pending    |
+| G     | Mojo GPU kernels: matmul (3 variants) + conv2d           | ✅ bit-exact on Apple M2 and NVIDIA T4, vs cuBLAS (`docs/06-gpu-results.md`) |
 
 ---
 
@@ -319,7 +320,7 @@ Docs that exist:
 
 - [`docs/03-results.md`](docs/03-results.md): first Mojo/MLIR/C++ measurements and limitations
 - [`docs/mojo-gpu.md`](docs/mojo-gpu.md): the Mojo GPU kernels: API, why they stay bit-exact, how to run them on Apple silicon and a free T4
-- [`docs/06-gpu-results.md`](docs/06-gpu-results.md): Apple M2 GPU measurements; NVIDIA T4 and cuBLAS pending
+- [`docs/06-gpu-results.md`](docs/06-gpu-results.md): Apple M2 and NVIDIA T4 measurements, Mojo vs cuBLAS
 - [`docs/mojo-kernels.md`](docs/mojo-kernels.md): the Mojo library: design, SIMD strategy, how it's tested
 - [`docs/mojo-api-design.md`](docs/mojo-api-design.md): the Mojo `TensorLike` trait, borrowed views and origins, compile-time tiles, and why only i/j are tiled
 - [`docs/02-tiling-model.md`](docs/02-tiling-model.md): the working-set derivation

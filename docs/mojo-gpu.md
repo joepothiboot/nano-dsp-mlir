@@ -62,7 +62,8 @@ each summed 256 inexact products.
 | default                              |   (CPU fused too)          | 1024 / 1024 |
 
 So the GPU honors the flag, and the inputs are sensitive enough to tell the
-two apart. The same check has to be repeated on NVIDIA (below).
+two apart. On an NVIDIA T4 `test-gpu` passed too, and every benchmark output
+matched the CPU kernel bit for bit ([`06-gpu-results.md`](06-gpu-results.md)).
 
 ### Tests
 
@@ -108,7 +109,8 @@ import os; os.environ["PATH"] = os.path.expanduser("~/.pixi/bin") + ":" + os.env
 %cd nano-dsp-mlir
 ```
 
-If the driver is older than 580, point Mojo at the system `ptxas`:
+If the driver is older than 580, point Mojo at the system `ptxas` (Colab's
+T4 had 580.82.07 in October 2026, so this wasn't needed there):
 
 ```
 %env MODULAR_NVPTX_COMPILER_PATH=/usr/local/cuda/bin/ptxas

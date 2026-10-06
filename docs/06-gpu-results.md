@@ -4,8 +4,8 @@ Measurements of the Mojo GPU kernels ([`mojo-gpu.md`](mojo-gpu.md)). Like
 [`03-results.md`](03-results.md), these are one machine's snapshot, not a
 general ranking.
 
-**Status:** Apple M2 GPU measured. **NVIDIA T4 and cuBLAS: pending** (the
-run needs a cloud GPU; the steps are in [`mojo-gpu.md`](mojo-gpu.md#nvidia-on-colab-or-kaggle-t4)).
+**Status:** Apple M2 GPU and NVIDIA Tesla T4 (free Colab) measured, with
+cuBLAS as the T4 baseline. Every Mojo row on both GPUs is bit-exact.
 
 ## Method
 
@@ -20,6 +20,10 @@ run needs a cloud GPU; the steps are in [`mojo-gpu.md`](mojo-gpu.md#nvidia-on-co
 - Cells: median time ± sample standard deviation, then throughput from the
   best sample (as in the CPU harness).
 - Apple M2, 10-core GPU, macOS 27.0.1, Mojo 1.1.0 with `max-core` 26.6.0.
+- NVIDIA Tesla T4 (Turing, compute capability 7.5), driver 580.82.07, on a
+  free Colab runtime, same Mojo; cuBLAS through CuPy (`benchmarks/bench_cublas.py`), TF32 off.
+  Raw results: `benchmarks/results/gpu-t4.json`, `cublas-t4.json`. A shared
+  cloud GPU is noisier than a local one; the spreads below show where.
 
 ## Apple M2 GPU
 
@@ -66,15 +70,57 @@ here reach its arithmetic limit.
   numbers show the kernels' progression, not how close they are to the best
   possible on the M2.
 
-## NVIDIA T4 — pending
+## NVIDIA Tesla T4
 
-| op and shape | Mojo naive | Mojo tiled | Mojo blocked | cuBLAS |
+`pixi run test-gpu` passed on the T4 (all 8 tests, including the odd shapes
+and the FMA negative control), and every benchmark row below was
+bit-checked against the CPU kernel before timing: the NVIDIA path keeps
+multiply and add separate under `contract=off` too.
+
+| op and shape | naive | tiled | blocked | cuBLAS | blocked / cuBLAS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| matmul 256³ | 74.9 µs ± 27.8 µs, 455 GFLOP/s | 62.7 µs ± 0.3 µs, 540 GFLOP/s | 41.9 µs ± 0.3 µs, 808 GFLOP/s | 53.2 µs ± 2.6 µs, 642 GFLOP/s | 126% |
+| matmul 512³ | 516.1 µs ± 9.4 µs, 524 GFLOP/s | 421.4 µs ± 5.2 µs, 644 GFLOP/s | 150.3 µs ± 0.9 µs, 1795 GFLOP/s | 87.6 µs ± 2.9 µs, 3109 GFLOP/s | 58% |
+| matmul 1024³ | 4.66 ms ± 54.4 µs, 466 GFLOP/s | 3.69 ms ± 47.1 µs, 589 GFLOP/s | 1.11 ms ± 6.8 µs, 1953 GFLOP/s | 611.7 µs ± 7.6 µs, 3529 GFLOP/s | 55% |
+| matmul 2048³ | 42.82 ms ± 4.31 ms, 405 GFLOP/s | 35.20 ms ± 594.3 µs, 492 GFLOP/s | 9.13 ms ± 177.0 µs, 1892 GFLOP/s | 4.44 ms ± 29.6 µs, 3881 GFLOP/s | 49% |
+
+| op and shape | one thread per output |
+| --- | ---: |
+| conv2d 56×56×64 → 64 | 569.8 µs ± 18.9 µs, 380 GFLOP/s |
+| conv2d 28×28×128 → 128 | 623.1 µs ± 36.0 µs, 326 GFLOP/s |
+
+`blocked / cuBLAS` is the throughput ratio from the best samples; the ratio
+of medians is the same to the percent.
+
+### cuBLAS correctness
+
+cuBLAS sums in its own order and may fuse multiply-add, so it is checked
+against a float64 product within the reordering bound, not bit for bit
+(`bench_cublas.py`). The largest fraction of the bound any output used:
+
+| size | 256³ | 512³ | 1024³ | 2048³ |
 | --- | ---: | ---: | ---: | ---: |
-| matmul 256³ – 2048³ | pending | pending | pending | pending |
-| conv2d (both shapes) | pending | — | — | — |
+| bound used | 0.25% | 0.25% | 0.05% | 0.07% |
 
-To fill in: run the steps in `mojo-gpu.md`, save the files as
-`benchmarks/results/gpu-t4.json` and `cublas-t4.json`, and paste the output
-of `python3 scripts/gpu_table.py`. Report for each size the Mojo blocked
-kernel as a percentage of cuBLAS, and cuBLAS's `bound_used`: cuBLAS is
-checked within the reordering bound, not bit for bit.
+A dropped or wrong product would use more than 100%.
+
+### Reading it
+
+- The register-blocked Mojo kernel reaches about half of cuBLAS from 512³
+  up (49–58%), while keeping the reference's summation order and unfused
+  multiply-add. cuBLAS is free to do neither. How much of the gap that
+  discipline costs on the T4 was not measured: unlike on the M2, no fused
+  build was timed here.
+- At 256³ the Mojo kernel is faster than cuBLAS (126%). At that size both are
+  dominated by launch and synchronize latency, and the CuPy call adds Python
+  overhead the Mojo launch doesn't have, so this says little about the
+  kernels themselves.
+- From 512³ up, register blocking is 3.4–4.7× the naive kernel on the T4
+  (4.7–7.1× on the M2); shared-memory tiling alone gives 1.2–1.3× (1.4–1.5×
+  on the M2).
+- The T4 runs the blocked matmul 3.4–5.4× faster than the M2 GPU from 512³
+  up (1892 against 549 GFLOP/s at 2048³), and conv2d 6.5× and 5.2× faster
+  by median time.
+- Naive 2048³ has a large spread (± 4.31 ms, 10% of its median) while its
+  best sample (42.4 ms) is close to the median: occasional slow samples,
+  most likely from sharing the cloud GPU.

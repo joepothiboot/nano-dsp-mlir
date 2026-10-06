@@ -216,9 +216,10 @@ def main():
                      "total": int(passed[1]) + (int(failed[1]) if failed else 0)}
 
     # GPU runs can't happen here (CI has no GPU): show the saved results of
-    # `pixi run bench-gpu`, each bit-checked against the CPU kernel when run.
+    # `pixi run bench-gpu` (each bit-checked against the CPU kernel when run)
+    # and of bench_cublas.py (checked within the reordering bound).
     gpu = []
-    for path in sorted((ROOT / "benchmarks" / "results").glob("gpu-*.json")):
+    for path in sorted((ROOT / "benchmarks" / "results").glob("*.json"), key=lambda p: (p.name.startswith("cublas"), p.name)):
         for b in json.loads(path.read_text())["benchmarks"]:
             if b["op"] == "conv2d" or b["shape"] == "2048x2048x2048":
                 gpu.append({k2: b[k2] for k2 in ("op", "shape", "impl", "config", "rate", "median_time", "checked")})
