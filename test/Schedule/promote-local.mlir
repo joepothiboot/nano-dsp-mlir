@@ -8,19 +8,9 @@
 // RUN: nanodsp-opt %s -split-input-file -nanodsp-promote-local=target=host-neon \
 // RUN: | FileCheck %s --check-prefix=NOLOCAL
 
-// Bufferized cache-tile loops, as -nanodsp-optimize + -nanodsp-bufferize
-// leave them; nanodsp.cache_loop marks the innermost cache-tile loop.
-// host-neon has no local memory, so nothing changes there.
 // NOLOCAL-NOT: #dsp.local
 // NOLOCAL-NOT: memref.dma_start
 
-// A k loop over matmul tiles: both input tiles change with k. The A tile is
-// rows of 64 elements, 256 apart (one level of stride); the B tile is one
-// contiguous run. The output tile is written, so it is not promoted.
-//
-// Double-buffered: two slots per tile (and per tag). The first tiles are
-// loaded before the loop; iteration k issues the DMAs for k + 64 into the
-// other slot, then waits for its own slot and computes on it.
 // CHECK-LABEL:  func.func @k_tiles
 // CHECK-SAME:     (%[[A:.*]]: memref<128x256xf32>, %[[B:.*]]: memref<256x64xf32>, %[[C:.*]]: memref<128x64xf32>)
 // CHECK-DAG:    %[[C0:.*]] = arith.constant 0 : index
@@ -59,9 +49,6 @@
 // DB-NEXT:        memref.dma_wait %[[TBK]][%[[C0]]], %[[NB]]
 // DB-NEXT:        linalg.matmul ins(%[[LAK]], %[[LBK]] : memref<128x64xf32, strided<[64, 1], offset: ?>, #dsp.local>, memref<64x64xf32, strided<[64, 1], offset: ?>, #dsp.local>) outs(%[[C]] : memref<128x64xf32>)
 // DB-NEXT:      } {nanodsp.cache_loop}
-//
-// Single-buffered: the DMAs are issued and waited for at the top of each
-// iteration.
 // SINGLE:       %[[LA:.*]] = memref.alloc() {alignment = 128 : i64} : memref<128x64xf32, #dsp.local>
 // SINGLE-NEXT:  %[[TA:.*]] = memref.alloc() : memref<1xi32>
 // SINGLE-NEXT:  %[[LB:.*]] = memref.alloc() {alignment = 128 : i64} : memref<64x64xf32, #dsp.local>
@@ -94,10 +81,6 @@ func.func @k_tiles(%a: memref<128x256xf32>, %b: memref<256x64xf32>, %c: memref<1
 
 // -----
 
-// The innermost cache loop is n: the A tile only depends on m, so it gets
-// one buffer and is loaded once per m iteration, before the n loop. The B
-// tile changes with n and is double-buffered. Buffers are allocated around
-// the whole nest.
 // CHECK-LABEL: func.func @invariant_tile
 // CHECK:       %[[LA:.*]] = memref.alloc() {alignment = 128 : i64} : memref<64x256xf32, #dsp.local>
 // DB:          memref.alloc() {alignment = 128 : i64} : memref<2x256x64xf32, #dsp.local>
@@ -134,8 +117,6 @@ func.func @invariant_tile(%a: memref<256x256xf32>, %b: memref<256x128xf32>, %c: 
 
 // -----
 
-// Left alone: a loop without the marker, and a tile whose rows are not
-// evenly strided (two levels of stride), which one DMA cannot describe.
 // CHECK-LABEL: func.func @not_promoted
 // CHECK-NOT:   #dsp.local
 // CHECK-NOT:   memref.dma_start
@@ -158,8 +139,6 @@ func.func @not_promoted(%a: memref<8x8x16xf32>, %out: memref<2x4x8xf32>) {
 
 // -----
 
-// 512x128 + 128x64 f32 tiles need 288 KiB; hexagon-hvx128 has 256 KiB of
-// VTCM.
 func.func @over_budget(%a: memref<512x256xf32>, %b: memref<256x64xf32>, %c: memref<512x64xf32>) {
   %c0 = arith.constant 0 : index
   %c128 = arith.constant 128 : index
@@ -176,8 +155,6 @@ func.func @over_budget(%a: memref<512x256xf32>, %b: memref<256x64xf32>, %c: memr
 
 // -----
 
-// 256x128 + 128x64 f32 tiles: 160 KiB fit the 256 KiB of VTCM once, 320 KiB
-// double-buffered do not, so the tiles stay single-buffered.
 // CHECK-LABEL: func.func @single_buffer_fallback
 // CHECK:       memref.alloc() {alignment = 128 : i64} : memref<256x128xf32, #dsp.local>
 // CHECK:       memref.alloc() {alignment = 128 : i64} : memref<128x64xf32, #dsp.local>

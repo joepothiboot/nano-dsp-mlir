@@ -14,9 +14,6 @@ ROOT_DIR="${SCRIPT_PATH%/*}"
 [[ "${ROOT_DIR}" == "${SCRIPT_PATH}" ]] && ROOT_DIR="."
 ROOT_DIR="$(cd "${ROOT_DIR}" && pwd)"
 
-# lit does not quote paths in RUN lines, so a checkout under a directory with
-# whitespace (e.g. "ml compiler/") fails every test with "command not found".
-# Build and test through a whitespace-free symlink instead.
 if [[ "${ROOT_DIR}" =~ [[:space:]] ]]; then
   LINK_DIR="${HOME}/.cache/nano-dsp-mlir"
   mkdir -p "${LINK_DIR}"
@@ -60,9 +57,3 @@ cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" -G Ninja \
   ${LIT_EXE:+-DLLVM_EXTERNAL_LIT="${LIT_EXE}"}
 
 cmake --build "${BUILD_DIR}" --target check-nanodsp
-
-# If nanodsp-opt fails due to missing conversion passes:
-# 1. Check lib/Conversion/CMakeLists.txt: it MUST add_mlir_library 
-#    and register the pass header.
-# 2. Check if your nanodsp-opt.cpp includes the pass header generated 
-#    by TableGen (Passes.h.inc).

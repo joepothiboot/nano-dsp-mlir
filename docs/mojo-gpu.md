@@ -21,10 +21,10 @@ var y = conv2d_gpu(ctx, image, filter, stride_h=2)       # same bits as conv2d(.
 
 Two layers, so a caller can keep data on the device:
 
-| Layer               | Takes                         | Does                                              |
-| ------------------- | ----------------------------- | ------------------------------------------------- |
-| `matmul_gpu`, `conv2d_gpu` | `Tensor`s              | copy to the device, launch, copy back, wait       |
-| `enqueue_matmul`, `enqueue_conv2d` | `DeviceBuffer`s | launch only; the caller synchronizes              |
+| Layer                              | Takes           | Does                                        |
+| ---------------------------------- | --------------- | ------------------------------------------- |
+| `matmul_gpu`, `conv2d_gpu`         | `Tensor`s       | copy to the device, launch, copy back, wait |
+| `enqueue_matmul`, `enqueue_conv2d` | `DeviceBuffer`s | launch only; the caller synchronizes        |
 
 `Conv2dShape` checks a convolution's shapes once (with the same errors as
 `conv2d`) and uploads the 13 integers the kernel needs, so repeated launches
@@ -33,12 +33,12 @@ it needs the `max-core` package; the CPU kernels don't.
 
 ## ⚡ Kernels
 
-| Kernel             | Per thread    | Memory reuse                                                   |
-| ------------------ | ------------- | -------------------------------------------------------------- |
-| matmul `NAIVE`     | 1 output      | none                                                           |
-| matmul `TILED`     | 1 output      | 16×16 tiles of `a` and `b` in shared memory                    |
-| matmul `BLOCKED`   | 4×4 outputs   | 64×16 and 16×64 shared tiles, the 4×4 outputs in registers     |
-| conv2d             | 1 output      | F varies fastest across threads: filter reads and output writes are contiguous, input reads are broadcasts |
+| Kernel           | Per thread  | Memory reuse                                                                                               |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------- |
+| matmul `NAIVE`   | 1 output    | none                                                                                                       |
+| matmul `TILED`   | 1 output    | 16×16 tiles of `a` and `b` in shared memory                                                                |
+| matmul `BLOCKED` | 4×4 outputs | 64×16 and 16×64 shared tiles, the 4×4 outputs in registers                                                 |
+| conv2d           | 1 output    | F varies fastest across threads: filter reads and output writes are contiguous, input reads are broadcasts |
 
 ## 🧪 Why the bits match
 
@@ -56,10 +56,10 @@ The CPU rules from [`05-soundness.md`](05-soundness.md) carry over:
 Point 2 was measured on the M2 GPU before writing any kernel: 1024 threads
 each summed 256 inexact products.
 
-| Build                                | Matches separate mul + add | Matches FMA |
-| ------------------------------------ | -------------------------: | ----------: |
-| `--fp-mode contract=off`             |                1024 / 1024 |  515 / 1024 |
-| default                              |   (CPU fused too)          | 1024 / 1024 |
+| Build                    | Matches separate mul + add | Matches FMA |
+| ------------------------ | -------------------------: | ----------: |
+| `--fp-mode contract=off` |                1024 / 1024 |  515 / 1024 |
+| default                  |            (CPU fused too) | 1024 / 1024 |
 
 So the GPU honors the flag, and the inputs are sensitive enough to tell the
 two apart. On an NVIDIA T4 `test-gpu` passed too, and every benchmark output

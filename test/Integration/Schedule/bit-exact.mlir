@@ -1,10 +1,3 @@
-// Differential test: the Stage 3 schedule must not change a single bit of
-// the result. Every output is printed as raw f32 bit patterns (buffer
-// addresses stripped), so a reassociated or FMA-contracted accumulation shows
-// up as a diff. Checked against both generated schedules and the hand-written
-// one in schedules/, plus a negative control (Inputs/split-reduction.mlir)
-// that reassociates and must differ.
-//
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg \
 // RUN: | mlir-opt %stock_lower_to_llvm \
 // RUN: | mlir-runner -e main --entry-point-result=void \
@@ -35,14 +28,11 @@
 // RUN: diff %t.ref %t.neon
 // RUN: diff %t.ref %t.avx2
 // RUN: diff %t.ref %t.hand
-// Negative control: a reassociating schedule must be caught.
 // RUN: not diff %t.ref %t.split > /dev/null
 // RUN: FileCheck %s < %t.ref
 
 func.func private @printMemrefI32(%ptr : tensor<*xi32>)
 
-// v = ((7 * i + 3 * j + 5 * k + 11 * l) mod 13) * 0.37 - 1.9. Fractional
-// values whose partial sums round, so summation order is visible in the bits.
 func.func @fill2(%i: index, %j: index) -> f32 {
   %z = arith.constant 0 : index
   %r = func.call @fill4(%i, %j, %z, %z) : (index, index, index, index) -> f32
@@ -71,7 +61,6 @@ func.func @fill4(%i: index, %j: index, %k: index, %l: index) -> f32 {
   return %v : f32
 }
 
-// Per-element bitcast; arith.bitcast on a whole tensor does not bufferize.
 func.func @print2(%t: tensor<?x?xf32>) {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
@@ -108,7 +97,6 @@ func.func @print4(%t: tensor<?x?x?x?xf32>) {
 }
 
 func.func @main() {
-  // Matmul large enough for several cache tiles on both targets.
   %a = tensor.generate {
   ^bb0(%i: index, %j: index):
     %v = func.call @fill2(%i, %j) : (index, index) -> f32
@@ -123,7 +111,6 @@ func.func @main() {
   %mmd = tensor.cast %mm : tensor<64x48xf32> to tensor<?x?xf32>
   call @print2(%mmd) : (tensor<?x?xf32>) -> ()
 
-  // Conv2d: unit stride, stride 2, and dilation 2.
   %in = tensor.generate {
   ^bb0(%n: index, %h: index, %w: index, %c: index):
     %v = func.call @fill4(%n, %h, %w, %c) : (index, index, index, index) -> f32
@@ -146,7 +133,6 @@ func.func @main() {
   call @print4(%c2d) : (tensor<?x?x?x?xf32>) -> ()
   call @print4(%c3d) : (tensor<?x?x?x?xf32>) -> ()
 
-  // Elementwise: add then relu (relu of a negative sum exercises the max).
   %s = tensor.extract_slice %a[0, 0] [6, 20] [1, 1] : tensor<64x96xf32> to tensor<6x20xf32>
   %t = tensor.extract_slice %a[6, 3] [6, 20] [1, 1] : tensor<64x96xf32> to tensor<6x20xf32>
   %sum = dsp.add %s, %t : tensor<6x20xf32>
@@ -156,8 +142,6 @@ func.func @main() {
   return
 }
 
-// Sanity-check the reference itself, so an empty or crashing run cannot make
-// the diffs pass trivially.
 // CHECK: sizes = [64, 48]
 // CHECK: sizes = [1, 10, 10, 8]
 // CHECK: sizes = [1, 5, 5, 8]

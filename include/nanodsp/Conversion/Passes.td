@@ -23,4 +23,4 @@ def ConvertDSPToLinalg : Pass<"convert-dsp-to-linalg"> {
   ];
 }
 
-#endif // NANODSP_CONVERSION_PASSES_TD
+#endif

@@ -8,6 +8,8 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
 ## Layout
 
 - `include/nanodsp/Dialect/DSP/IR/*.td` — ODS for the dialect and ops
+- `include/nanodsp/Dialect/DSP/IR/DSPConstants.h` — quantization limits shared
+  by the `qmatmul` verifier and its lowering
 - `include/nanodsp/Conversion/Passes.td` — `-convert-dsp-to-linalg` pass
 - `include/nanodsp/Schedule/` + `lib/Schedule/` — Stage 3: `TargetModel`,
   `TileSizeModel`, schedule generation, `-nanodsp-optimize`,
@@ -32,6 +34,7 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
   blocked) and `conv2d` on a GPU, bit-exact with the CPU kernels (see
   `docs/mojo-gpu.md`). It is not re-exported from the package root, so the
   CPU kernels don't need `max-core`
+- `mojo/nanodsp/constants.mojo` — int8 limits and GPU tile sizes
 - `mojo/tests/` — golden (same values as `test/Integration/`) and
   differential (SIMD vs naive loop nest) tests
 - `reference/` — header-only scalar C++ oracle + golden-value test
@@ -91,4 +94,9 @@ pixi run bench-gpu       # GPU benchmark -> build/bench/results-gpu.json
   attributes.
 - The C++ reference builds as C++20 (arithmetic `>>` on negative integers is
   defined there).
-- Format non-C++ files with Prettier (`.prettierrc.json`).
+- Format C++ with clang-format (`.clang-format`), Mojo with `mojo format`, and
+  other files with Prettier (`.prettierrc.json`).
+- No comments in code (lit `RUN`/`CHECK` lines and pragmas excepted); explain
+  design in `docs/`. Leave a blank line between logical blocks, avoid nested
+  ternaries, keep files under ~500 lines, and put shared values in the
+  constants files above.

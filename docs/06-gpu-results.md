@@ -27,25 +27,25 @@ cuBLAS as the T4 baseline. Every Mojo row on both GPUs is bit-exact.
 
 ## Apple M2 GPU
 
-| op and shape | naive | tiled | blocked |
-| --- | ---: | ---: | ---: |
-| matmul 256³ | 795.5 µs ± 12.6 µs, 44 GFLOP/s | 586.2 µs ± 27.3 µs, 62 GFLOP/s | 351.5 µs ± 25.7 µs, 110 GFLOP/s |
-| matmul 512³ | 3.86 ms ± 20.5 µs, 70 GFLOP/s | 2.70 ms ± 8.9 µs, 100 GFLOP/s | 893.0 µs ± 35.7 µs, 333 GFLOP/s |
-| matmul 1024³ | 28.27 ms ± 53.3 µs, 76 GFLOP/s | 18.86 ms ± 55.2 µs, 114 GFLOP/s | 4.29 ms ± 28.5 µs, 509 GFLOP/s |
+| op and shape |                            naive |                             tiled |                         blocked |
+| ------------ | -------------------------------: | --------------------------------: | ------------------------------: |
+| matmul 256³  |   795.5 µs ± 12.6 µs, 44 GFLOP/s |    586.2 µs ± 27.3 µs, 62 GFLOP/s | 351.5 µs ± 25.7 µs, 110 GFLOP/s |
+| matmul 512³  |    3.86 ms ± 20.5 µs, 70 GFLOP/s |     2.70 ms ± 8.9 µs, 100 GFLOP/s | 893.0 µs ± 35.7 µs, 333 GFLOP/s |
+| matmul 1024³ |   28.27 ms ± 53.3 µs, 76 GFLOP/s |   18.86 ms ± 55.2 µs, 114 GFLOP/s |  4.29 ms ± 28.5 µs, 509 GFLOP/s |
 | matmul 2048³ | 223.80 ms ± 452.7 µs, 77 GFLOP/s | 148.78 ms ± 278.7 µs, 116 GFLOP/s | 31.36 ms ± 32.5 µs, 549 GFLOP/s |
 
-| op and shape | one thread per output |
-| --- | ---: |
-| conv2d 56×56×64 → 64 | 3.68 ms ± 29.6 µs, 60 GFLOP/s |
+| op and shape           |         one thread per output |
+| ---------------------- | ----------------------------: |
+| conv2d 56×56×64 → 64   | 3.68 ms ± 29.6 µs, 60 GFLOP/s |
 | conv2d 28×28×128 → 128 | 3.22 ms ± 13.9 µs, 62 GFLOP/s |
 
 ### Against the CPU (same machine, `03-results.md`)
 
-| op and shape | C++ reference | MLIR scheduled | Mojo CPU, best | Mojo GPU, best |
-| --- | ---: | ---: | ---: | ---: |
-| matmul 512³ | 109.06 ms | 7.99 ms | 5.75 ms (tiled) | 0.89 ms (blocked) |
-| conv2d 56×56×64 → 64 | 89.29 ms | 10.76 ms | 14.84 ms | 3.68 ms |
-| conv2d 28×28×128 → 128 | 87.85 ms | 25.62 ms | 13.11 ms | 3.22 ms |
+| op and shape           | C++ reference | MLIR scheduled |  Mojo CPU, best |    Mojo GPU, best |
+| ---------------------- | ------------: | -------------: | --------------: | ----------------: |
+| matmul 512³            |     109.06 ms |        7.99 ms | 5.75 ms (tiled) | 0.89 ms (blocked) |
+| conv2d 56×56×64 → 64   |      89.29 ms |       10.76 ms |        14.84 ms |           3.68 ms |
+| conv2d 28×28×128 → 128 |      87.85 ms |       25.62 ms |        13.11 ms |           3.22 ms |
 
 All medians; all bit-exact against the reference except scheduled MLIR
 conv2d, which is within the reordering bound (`03-results.md`).
@@ -77,16 +77,16 @@ and the FMA negative control), and every benchmark row below was
 bit-checked against the CPU kernel before timing: the NVIDIA path keeps
 multiply and add separate under `contract=off` too.
 
-| op and shape | naive | tiled | blocked | cuBLAS | blocked / cuBLAS |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| matmul 256³ | 74.9 µs ± 27.8 µs, 455 GFLOP/s | 62.7 µs ± 0.3 µs, 540 GFLOP/s | 41.9 µs ± 0.3 µs, 808 GFLOP/s | 53.2 µs ± 2.6 µs, 642 GFLOP/s | 126% |
-| matmul 512³ | 516.1 µs ± 9.4 µs, 524 GFLOP/s | 421.4 µs ± 5.2 µs, 644 GFLOP/s | 150.3 µs ± 0.9 µs, 1795 GFLOP/s | 87.6 µs ± 2.9 µs, 3109 GFLOP/s | 58% |
-| matmul 1024³ | 4.66 ms ± 54.4 µs, 466 GFLOP/s | 3.69 ms ± 47.1 µs, 589 GFLOP/s | 1.11 ms ± 6.8 µs, 1953 GFLOP/s | 611.7 µs ± 7.6 µs, 3529 GFLOP/s | 55% |
-| matmul 2048³ | 42.82 ms ± 4.31 ms, 405 GFLOP/s | 35.20 ms ± 594.3 µs, 492 GFLOP/s | 9.13 ms ± 177.0 µs, 1892 GFLOP/s | 4.44 ms ± 29.6 µs, 3881 GFLOP/s | 49% |
+| op and shape |                           naive |                            tiled |                          blocked |                          cuBLAS | blocked / cuBLAS |
+| ------------ | ------------------------------: | -------------------------------: | -------------------------------: | ------------------------------: | ---------------: |
+| matmul 256³  |  74.9 µs ± 27.8 µs, 455 GFLOP/s |    62.7 µs ± 0.3 µs, 540 GFLOP/s |    41.9 µs ± 0.3 µs, 808 GFLOP/s |   53.2 µs ± 2.6 µs, 642 GFLOP/s |             126% |
+| matmul 512³  |  516.1 µs ± 9.4 µs, 524 GFLOP/s |   421.4 µs ± 5.2 µs, 644 GFLOP/s |  150.3 µs ± 0.9 µs, 1795 GFLOP/s |  87.6 µs ± 2.9 µs, 3109 GFLOP/s |              58% |
+| matmul 1024³ |  4.66 ms ± 54.4 µs, 466 GFLOP/s |   3.69 ms ± 47.1 µs, 589 GFLOP/s |   1.11 ms ± 6.8 µs, 1953 GFLOP/s | 611.7 µs ± 7.6 µs, 3529 GFLOP/s |              55% |
+| matmul 2048³ | 42.82 ms ± 4.31 ms, 405 GFLOP/s | 35.20 ms ± 594.3 µs, 492 GFLOP/s | 9.13 ms ± 177.0 µs, 1892 GFLOP/s | 4.44 ms ± 29.6 µs, 3881 GFLOP/s |              49% |
 
-| op and shape | one thread per output |
-| --- | ---: |
-| conv2d 56×56×64 → 64 | 569.8 µs ± 18.9 µs, 380 GFLOP/s |
+| op and shape           |           one thread per output |
+| ---------------------- | ------------------------------: |
+| conv2d 56×56×64 → 64   | 569.8 µs ± 18.9 µs, 380 GFLOP/s |
 | conv2d 28×28×128 → 128 | 623.1 µs ± 36.0 µs, 326 GFLOP/s |
 
 `blocked / cuBLAS` is the throughput ratio from the best samples; the ratio
@@ -98,8 +98,8 @@ cuBLAS sums in its own order and may fuse multiply-add, so it is checked
 against a float64 product within the reordering bound, not bit for bit
 (`bench_cublas.py`). The largest fraction of the bound any output used:
 
-| size | 256³ | 512³ | 1024³ | 2048³ |
-| --- | ---: | ---: | ---: | ---: |
+| size       |  256³ |  512³ | 1024³ | 2048³ |
+| ---------- | ----: | ----: | ----: | ----: |
 | bound used | 0.25% | 0.25% | 0.05% | 0.07% |
 
 A dropped or wrong product would use more than 100%.

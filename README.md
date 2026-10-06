@@ -240,7 +240,8 @@ One page that traces `demo/matmul.mlir` from the `dsp` dialect to NEON and
 AVX2 machine code, shows the tile sizes each target model picks, and reports
 the bit-exact results. The script runs the real tools (`nanodsp-opt`, `llc`,
 `mlir-runner`, the lit suite) and injects their output into
-`demo/template.html`, so nothing on the page is written by hand.
+`demo/template.html` (styled by `demo/style.css`, driven by `demo/app.js`),
+so nothing on the page is written by hand.
 
 ### 🔶 Hexagon (emulated)
 
@@ -300,16 +301,16 @@ cuBLAS baseline, are described in [`docs/mojo-gpu.md`](docs/mojo-gpu.md).
 
 ## 📊 Project status
 
-| Stage | Scope                                                    | Status                                                            |
-| ----- | -------------------------------------------------------- | ----------------------------------------------------------------- |
-| 1     | Architecture + judgment calls                            | ✅ done                                                           |
-| 2     | `dsp` dialect + lowering to `linalg.generic`             | ✅ done                                                           |
-| 3     | Tiling + vectorization (Transform dialect schedule)      | ✅ done, bit-exact (`lib/Schedule/`, `test/Schedule/`)            |
-| 4     | Bufferization + `linalg → scf → vector → LLVM`           | ✅ done (upstream passes, see `test/Integration/end-to-end.mlir`) |
-| L     | Local memory: VTCM promotion + double-buffered DMA       | ✅ done, functional only (`docs/scratchpad-dma.md`)               |
-| 5     | Benchmark harness + cross-implementation measurements    | ✅ harnesses and first M2 comparison (`benchmarks/`)              |
-| M     | Mojo kernel library + C++ reference oracle               | ✅ done (`mojo/`, `reference/`; Mojo 1.1)                         |
-| 6     | (planned) DSL frontend polish, autotuning sweep write-up | ⏳ not started                                                    |
+| Stage | Scope                                                    | Status                                                                       |
+| ----- | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 1     | Architecture + judgment calls                            | ✅ done                                                                      |
+| 2     | `dsp` dialect + lowering to `linalg.generic`             | ✅ done                                                                      |
+| 3     | Tiling + vectorization (Transform dialect schedule)      | ✅ done, bit-exact (`lib/Schedule/`, `test/Schedule/`)                       |
+| 4     | Bufferization + `linalg → scf → vector → LLVM`           | ✅ done (upstream passes, see `test/Integration/end-to-end.mlir`)            |
+| L     | Local memory: VTCM promotion + double-buffered DMA       | ✅ done, functional only (`docs/scratchpad-dma.md`)                          |
+| 5     | Benchmark harness + cross-implementation measurements    | ✅ harnesses and first M2 comparison (`benchmarks/`)                         |
+| M     | Mojo kernel library + C++ reference oracle               | ✅ done (`mojo/`, `reference/`; Mojo 1.1)                                    |
+| 6     | (planned) DSL frontend polish, autotuning sweep write-up | ⏳ not started                                                               |
 | G     | Mojo GPU kernels: matmul (3 variants) + conv2d           | ✅ bit-exact on Apple M2 and NVIDIA T4, vs cuBLAS (`docs/06-gpu-results.md`) |
 
 ---

@@ -28,4 +28,4 @@ def DSP_LocalMemorySpaceAttr : DSP_Attr<"LocalMemorySpace", "local"> {
   }];
 }
 
-#endif // NANODSP_DIALECT_DSP_IR_DSPATTRS_TD
+#endif

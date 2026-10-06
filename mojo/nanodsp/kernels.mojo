@@ -1,29 +1,12 @@
-"""SIMD kernels for the four `dsp` ops.
-
-All inner loops run over the innermost, contiguous dimension in chunks of the
-target's native SIMD width, with a scalar tail. Reductions keep the same
-order as the naive loop nest (and as `linalg.generic` after
-`-convert-linalg-to-loops`), and multiply and add are kept separate rather
-than fused, so results are bit-identical to the scalar reference, not just
-close.
-
-`matmul_tiled` is the generic version: it is written against the
-`TensorLike` trait, so the same source runs on owned tensors and on strided
-views, and its tile shape and SIMD width are compile-time parameters.
-"""
-
 from std.sys import simd_width_of
 
 from .layout import TensorLike
 from .tensor import Tensor
 
 
-def add[dtype: DType](a: Tensor[dtype], b: Tensor[dtype]) raises -> Tensor[dtype]:
-    """Elementwise `a + b`, like `dsp.add`: shapes must match exactly.
-
-    Raises:
-        If the shapes differ (there is no implicit broadcasting).
-    """
+def add[
+    dtype: DType
+](a: Tensor[dtype], b: Tensor[dtype]) raises -> Tensor[dtype]:
     _require(a.shape == b.shape, "add: operand shapes differ")
     var result = Tensor[dtype](a.shape.copy())
     var n = a.numel()
@@ -33,21 +16,21 @@ def add[dtype: DType](a: Tensor[dtype], b: Tensor[dtype]) raises -> Tensor[dtype
 
     comptime width = simd_width_of[dtype]()
     var i = 0
+
     while i + width <= n:
-        pr.unsafe_store(i, pa.unsafe_load[width=width](i) + pb.unsafe_load[width=width](i))
+        pr.unsafe_store(
+            i, pa.unsafe_load[width=width](i) + pb.unsafe_load[width=width](i)
+        )
         i += width
+
     while i < n:
         pr[unsafe_offset=i] = pa[unsafe_offset=i] + pb[unsafe_offset=i]
         i += 1
+
     return result^
 
 
 def relu[dtype: DType](a: Tensor[dtype]) -> Tensor[dtype]:
-    """Elementwise `max(x, 0)` with NaN propagation, like `dsp.relu`.
-
-    Written as `x < 0 ? 0 : x` so that NaN (for which `x < 0` is false)
-    passes through, matching `arith.maximumf` and `numpy.maximum`.
-    """
     var result = Tensor[dtype](a.shape.copy())
     var n = a.numel()
     var pa = a.data.unsafe_ptr()
@@ -56,28 +39,23 @@ def relu[dtype: DType](a: Tensor[dtype]) -> Tensor[dtype]:
     comptime width = simd_width_of[dtype]()
     var zeros = SIMD[dtype, width](0)
     var i = 0
+
     while i + width <= n:
         var v = pa.unsafe_load[width=width](i)
         pr.unsafe_store(i, v.lt(zeros).select(zeros, v))
         i += width
+
     while i < n:
         var x = pa[unsafe_offset=i]
         pr[unsafe_offset=i] = 0 if x < 0 else x
         i += 1
+
     return result^
 
 
 def matmul[
     dtype: DType
 ](a: Tensor[dtype], b: Tensor[dtype]) raises -> Tensor[dtype]:
-    """Row-major `(M x K) * (K x N) -> (M x N)`, like `dsp.matmul`.
-
-    Uses i-k-j order so the inner loop streams a row of `b` and a row of the
-    result, both contiguous.
-
-    Raises:
-        If either operand is not rank 2 or the inner dimensions differ.
-    """
     _require(a.rank() == 2 and b.rank() == 2, "matmul: operands must be rank 2")
     var m = a.shape[0]
     var k = a.shape[1]
@@ -85,9 +63,11 @@ def matmul[
     _require(b.shape[0] == k, "matmul: inner dimensions differ")
 
     var result = Tensor[dtype]([m, n])
+
     for i in range(m):
         for kk in range(k):
             _axpy(result.data, i * n, b.data, kk * n, a.data[i * k + kk], n)
+
     return result^
 
 
@@ -101,36 +81,6 @@ def matmul_tiled[
     tile_n: Int,
     width: Int = simd_width_of[dtype](),
 ](a: A, b: B, mut c: C) raises:
-    """`c = a * b` for `(M x K) * (K x N) -> (M x N)`, tiled over i and j.
-
-    Generic over `TensorLike`, so `a`, `b` and `c` can each be a `Tensor` or
-    a `TensorView` (including a tile of a larger buffer). `c` is fully
-    overwritten.
-
-    The output is cut into `tile_m x tile_n` blocks. A full block is computed
-    by a register micro-kernel: `tile_m * tile_n / width` SIMD accumulators
-    that start at zero, take one `acc + a[i, k] * b[k, j:j+width]` per k, and
-    are stored once at the end. Partial blocks at the bottom and right edges
-    use the same update one row at a time, with a scalar tail for the last
-    `N mod width` columns.
-
-    Only i and j are tiled. Every output element is still
-    `((0 + a[i,0]*b[0,j]) + a[i,1]*b[1,j]) + ...` in increasing k, with the
-    multiply and the add kept separate, so the result is bit-identical to
-    `matmul` and to the scalar C++ reference for any tile configuration.
-
-    Parameters:
-        A: Type of `a` (inferred).
-        B: Type of `b` (inferred).
-        C: Type of `c` (inferred).
-        dtype: Element type; must match all three operands.
-        tile_m: Rows per register tile.
-        tile_n: Columns per register tile; a multiple of `width`.
-        width: SIMD lanes per accumulator.
-
-    Raises:
-        If the inner dimensions differ or `c` is not `M x N`.
-    """
     comptime assert A.element_dtype == dtype, "matmul_tiled: dtype of a"
     comptime assert B.element_dtype == dtype, "matmul_tiled: dtype of b"
     comptime assert C.element_dtype == dtype, "matmul_tiled: dtype of c"
@@ -150,8 +100,10 @@ def matmul_tiled[
 
     for i0 in range(0, m, tile_m):
         var h = min(tile_m, m - i0)
+
         for j0 in range(0, n, tile_n):
             var w = min(tile_n, n - j0)
+
             if h == tile_m and w == tile_n:
                 _matmul_micro[dtype, tile_m, tile_n, width](a, b, c, i0, j0, k)
             else:
@@ -168,21 +120,23 @@ def _matmul_micro[
     B: TensorLike,
     C: TensorLike,
 ](a: A, b: B, mut c: C, i0: Int, j0: Int, k: Int):
-    """One full `tile_m x tile_n` block, accumulated in registers."""
     comptime nv = tile_n // width
     var acc = Array[SIMD[dtype, width], tile_m * nv](fill=0)
+
     for kk in range(k):
         var bv = Array[SIMD[dtype, width], nv](fill=0)
         comptime for v in range(nv):
             bv[v] = rebind[SIMD[dtype, width]](
                 b.load[width](kk, j0 + v * width)
             )
+
         comptime for r in range(tile_m):
             var av = SIMD[dtype, width](
                 rebind[Scalar[dtype]](a.load[1](i0 + r, kk))
             )
             comptime for v in range(nv):
                 acc[r * nv + v] = acc[r * nv + v] + av * bv[v]
+
     comptime for r in range(tile_m):
         comptime for v in range(nv):
             c.store[width](
@@ -195,16 +149,18 @@ def _matmul_micro[
 def _matmul_edge[
     dtype: DType, width: Int, A: TensorLike, B: TensorLike, C: TensorLike
 ](a: A, b: B, mut c: C, i0: Int, j0: Int, h: Int, w: Int, k: Int):
-    """A partial block at the bottom or right edge, one row at a time."""
     for i in range(i0, i0 + h):
         var j = j0
+
         while j < j0 + w:
             c.store[1](i, j, 0)
             j += 1
+
         for kk in range(k):
             var alpha = rebind[Scalar[dtype]](a.load[1](i, kk))
             var av = SIMD[dtype, width](alpha)
             j = j0
+
             while j + width <= j0 + w:
                 var cv = rebind[SIMD[dtype, width]](c.load[width](i, j))
                 var bv = rebind[SIMD[dtype, width]](b.load[width](kk, j))
@@ -212,6 +168,7 @@ def _matmul_edge[
                     i, j, rebind[SIMD[C.element_dtype, width]](cv + av * bv)
                 )
                 j += width
+
             while j < j0 + w:
                 var cs = rebind[Scalar[dtype]](c.load[1](i, j))
                 var bs = rebind[Scalar[dtype]](b.load[1](kk, j))
@@ -231,16 +188,6 @@ def conv2d[
     dilation_h: Int = 1,
     dilation_w: Int = 1,
 ) raises -> Tensor[dtype]:
-    """2-D cross-correlation, NHWC input x HWCF filter -> NHWF output.
-
-    Matches `dsp.conv2d` / `linalg.conv_2d_nhwc_hwcf`: no kernel flip and
-    'valid' padding only. The SIMD dimension is F, which is contiguous in
-    both the filter and the output.
-
-    Raises:
-        If the ranks or channel counts do not match, or the output would be
-        empty.
-    """
     _require(
         input.rank() == 4 and filter.rank() == 4,
         "conv2d: input and filter must be rank 4",
@@ -263,15 +210,19 @@ def conv2d[
     _require(oh > 0 and ow > 0, "conv2d: filter is larger than the input")
 
     var result = Tensor[dtype]([nb, oh, ow, f])
+
     for n in range(nb):
         for y in range(oh):
             for x in range(ow):
                 var out_off = ((n * oh + y) * ow + x) * f
+
                 for ky in range(kh):
                     var iy = y * stride_h + ky * dilation_h
+
                     for kx in range(kw):
                         var ix = x * stride_w + kx * dilation_w
                         var in_off = ((n * h + iy) * w + ix) * c
+
                         for ch in range(c):
                             var f_off = ((ky * kw + kx) * c + ch) * f
                             _axpy(
@@ -282,6 +233,7 @@ def conv2d[
                                 input.data[in_off + ch],
                                 f,
                             )
+
     return result^
 
 
@@ -296,15 +248,20 @@ def _axpy[
     alpha: Scalar[dtype],
     n: Int,
 ):
-    """`dst[dst_off:][:n] += alpha * src[src_off:][:n]`, unfused."""
     comptime width = simd_width_of[dtype]()
     var pd = dst.unsafe_ptr().unsafe_offset(dst_off)
     var ps = src.unsafe_ptr().unsafe_offset(src_off)
     var va = SIMD[dtype, width](alpha)
     var j = 0
+
     while j + width <= n:
-        pd.unsafe_store(j, pd.unsafe_load[width=width](j) + va * ps.unsafe_load[width=width](j))
+        pd.unsafe_store(
+            j,
+            pd.unsafe_load[width=width](j)
+            + va * ps.unsafe_load[width=width](j),
+        )
         j += width
+
     while j < n:
         pd[unsafe_offset=j] = pd[unsafe_offset=j] + alpha * ps[unsafe_offset=j]
         j += 1

@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""Build the demo page from real compiler output.
-
-Runs nanodsp-opt, mlir-translate, llc and mlir-runner on demo/matmul.mlir and
-the bit-exact integration test, then injects the results into
-demo/template.html and writes build/demo/index.html. Nothing on the page is
-computed by hand or in the browser.
-
-    ./test.sh                 # build nanodsp-opt first
-    python3 scripts/gen_demo.py [--build-dir build] [--skip-tests]
-"""
 
 import argparse
 import datetime
@@ -24,7 +14,6 @@ ROOT = Path(__file__).resolve().parent.parent
 DEMO_INPUT = ROOT / "demo" / "matmul.mlir"
 BIT_EXACT = ROOT / "test" / "Integration" / "Schedule" / "bit-exact.mlir"
 
-# Per target: llc triple and flags, and the instruction mnemonics to count.
 MACHINES = {
     "host-neon": {
         "llc": ["-mtriple=aarch64-apple-darwin"],
@@ -59,65 +48,76 @@ def find_llvm_bin():
                  "/usr/local/opt/llvm/bin"]:
         if cand and (Path(cand) / "llc").exists():
             return Path(cand)
+
     llc = shutil.which("llc")
+
     if llc:
         return Path(llc).parent
+
     sys.exit("Can't find llc. Set LLVM_BIN to the LLVM bin directory.")
 
 
 def run(cmd, stdin=None):
-    # From the repo root, so pass options can use relative paths: MLIR splits
-    # pass options on whitespace, and the checkout path may contain some.
     proc = subprocess.run([str(c) for c in cmd], input=stdin, cwd=ROOT,
                           capture_output=True, text=True)
+
     if proc.returncode != 0:
         sys.exit(f"command failed: {' '.join(map(str, cmd))}\n{proc.stderr}")
+
     return proc.stdout
 
 
 def strip_comments(text):
     lines = [l for l in text.splitlines() if not l.lstrip().startswith("//")]
+
     return "\n".join(lines).strip() + "\n"
 
 
 def target_models():
-    """Parse the built-in targets out of TargetModel.cpp (the source of truth)."""
     src = (ROOT / "lib" / "Schedule" / "TargetModel.cpp").read_text()
     pat = re.compile(
-        r'\{"(?P<name>[\w-]+)",\s*/\*vectorBits=\*/(?P<bits>\d+),\s*'
-        r"/\*numVectorRegs=\*/(?P<regs>\d+),\s*/\*cacheBytes=\*/(?P<cache>[\d *]+),"
-        r"\s*/\*cacheFraction=\*/(?P<frac>[\d.]+)")
+        r'\{"(?P<name>[\w-]+)",\s*(?P<bits>\d+),\s*(?P<regs>\d+),\s*'
+        r"(?P<cache>[\d *]+),\s*(?P<frac>[\d.]+)")
     models = {}
+
     for m in pat.finditer(src):
-        cache = eval(m["cache"])  # e.g. "128 * 1024", from our own source
+        cache = eval(m["cache"])
         models[m["name"]] = {
             "vectorBits": int(m["bits"]), "regs": int(m["regs"]),
             "lanes": int(m["bits"]) // 32, "cacheBytes": cache,
             "budgetBytes": int(cache * float(m["frac"])),
             "cacheFraction": float(m["frac"]),
         }
+
     return models
 
 
 def i64_array(attr_text, name):
     m = re.search(name + r" = array<i64: ([\d, ]+)>", attr_text)
+
     return [int(x) for x in m[1].split(",")]
 
 
 def asm_excerpt(asm, vmul_re):
-    """The basic block holding the vector multiplies: label to branch."""
     lines = asm.splitlines()
     muls = [i for i, l in enumerate(lines) if re.search(vmul_re, l)]
+
     if not muls:
         return ""
+
     start = muls[0]
+
     while start > 0 and not re.match(r"^(\.?LBB|[;#] %bb)", lines[start]):
         start -= 1
+
     end = muls[-1]
+
     while end < len(lines) - 1 and not re.match(r"^\s+(b|b\.\w+|j\w+)\s", lines[end]):
         end += 1
+
     body = [l.split(";")[0].split("#")[0].rstrip() if not re.match(r"^(\.?LBB|[;#] %bb)", l) else l.split(";")[0].rstrip()
             for l in lines[start:end + 1]]
+
     return "\n".join(l for l in body if l.strip()) + "\n"
 
 
@@ -127,7 +127,9 @@ def count_values(printed):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(
+        description="Build the demo page from real compiler output."
+    )
     ap.add_argument("--build-dir", default=str(ROOT / "build"))
     ap.add_argument("--skip-tests", action="store_true",
                     help="don't run ./test.sh (the test badge is omitted)")
@@ -135,8 +137,10 @@ def main():
 
     build = Path(args.build_dir)
     opt = build / "bin" / "nanodsp-opt"
+
     if not opt.exists():
         sys.exit(f"{opt} not found. Run ./test.sh first.")
+
     llvm = find_llvm_bin()
     translate, llc = llvm / "mlir-translate", llvm / "llc"
     mlir_opt, runner = llvm / "mlir-opt", llvm / "mlir-runner"
@@ -153,6 +157,7 @@ def main():
 
     models = target_models()
     targets = {}
+
     for name, mach in MACHINES.items():
         emitted = run([opt, DEMO_INPUT, "-convert-dsp-to-linalg",
                        f"-nanodsp-emit-schedule=target={name}"])
@@ -181,11 +186,12 @@ def main():
             "asmStats": {k2: count(k2) for k2 in ("vmul", "vadd", "smul", "fma")},
         }
 
-    # Bit-exact evidence: the same runs as bit-exact.mlir, counted per value.
     def execute(extra, lowering):
         ir = run([opt, BIT_EXACT, "-convert-dsp-to-linalg", *extra, *lowering[0]])
+
         if lowering[1]:
             ir = run([mlir_opt, *lowering[1]], stdin=ir)
+
         return count_values(run([runner, *runner_args], stdin=ir))
 
     ref = execute([], ([], STOCK_LOWERING))
@@ -200,6 +206,7 @@ def main():
           "test/Integration/Schedule/Inputs/split-reduction.mlir"], "differ"),
     ]
     proof = {"values": len(ref), "runs": []}
+
     for label, desc, extra, expect in runs:
         vals = execute(extra, ours)
         differ = sum(a != b for a, b in zip(ref, vals)) + abs(len(ref) - len(vals))
@@ -207,18 +214,18 @@ def main():
                               "differ": differ})
 
     tests = None
+
     if not args.skip_tests:
         out = subprocess.run([ROOT / "test.sh"], capture_output=True, text=True).stdout
         passed = re.search(r"Passed\s*:\s*(\d+)", out)
         failed = re.search(r"Failed\s*:\s*(\d+)", out)
+
         if passed:
             tests = {"passed": int(passed[1]),
                      "total": int(passed[1]) + (int(failed[1]) if failed else 0)}
 
-    # GPU runs can't happen here (CI has no GPU): show the saved results of
-    # `pixi run bench-gpu` (each bit-checked against the CPU kernel when run)
-    # and of bench_cublas.py (checked within the reordering bound).
     gpu = []
+
     for path in sorted((ROOT / "benchmarks" / "results").glob("*.json"), key=lambda p: (p.name.startswith("cublas"), p.name)):
         for b in json.loads(path.read_text())["benchmarks"]:
             if b["op"] == "conv2d" or b["shape"] == "2048x2048x2048":
@@ -244,6 +251,9 @@ def main():
     out_dir = build / "demo"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "index.html").write_text(template.replace("__DEMO_DATA__", payload))
+
+    for asset in ("style.css", "app.js"):
+        shutil.copy(ROOT / "demo" / asset, out_dir / asset)
     print(out_dir / "index.html")
 
 

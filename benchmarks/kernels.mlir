@@ -1,11 +1,3 @@
-// Kernels for the Stage 5 benchmark (scripts/bench.sh, benchmarks/harness.cpp).
-//
-// Same shapes as benchmarks/bench_kernels.mojo: square matmul n = 64..512,
-// conv2d 3x3 on 56x56x64 -> 64 and 28x28x128 -> 128 (NHWC x HWCF, valid
-// padding), plus one int8 qmatmul. Static shapes, one function per shape;
-// scripts/bench.sh compiles this file once per configuration (untiled,
-// host-neon schedule) and suffixes every function name with the
-// configuration so a single harness binary links all of them.
 module {
   func.func @matmul_64(%a: tensor<64x64xf32>, %b: tensor<64x64xf32>) -> tensor<64x64xf32>
       attributes {llvm.emit_c_interface} {
@@ -37,8 +29,6 @@ module {
     %r = dsp.conv2d %i, %f : (tensor<1x28x28x128xf32>, tensor<3x3x128x128xf32>) -> tensor<1x26x26x128xf32>
     return %r : tensor<1x26x26x128xf32>
   }
-  // Quantization parameters as in test/Hexagon/kernels-i8.mlir; the harness
-  // passes the same QuantParams to nanodsp::ref::qmatmul.
   func.func @qmatmul_256(%a: tensor<256x256xi8>, %b: tensor<256x256xi8>) -> tensor<256x256xi8>
       attributes {llvm.emit_c_interface} {
     %r = dsp.qmatmul %a, %b {lhs_zp = -7 : i32, rhs_zp = 12 : i32,

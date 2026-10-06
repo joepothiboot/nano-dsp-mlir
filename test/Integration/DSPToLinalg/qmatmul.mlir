@@ -1,7 +1,3 @@
-// Golden values shared with mojo/tests/test_kernels.mojo and
-// reference/test_reference.cpp. Run unscheduled and scheduled: the integer
-// pipeline must give identical results either way.
-//
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg \
 // RUN: | mlir-opt %stock_lower_to_llvm \
 // RUN: | mlir-runner -e main --entry-point-result=void \
@@ -15,8 +11,6 @@
 
 func.func private @printMemrefI32(%ptr : tensor<*xi32>)
 
-// printMemrefI8 prints raw characters, so widen to i32 first (per element:
-// arith.extsi on a whole tensor does not bufferize).
 func.func @print(%t: tensor<?x?xi8>) {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
@@ -34,13 +28,6 @@ func.func @print(%t: tensor<?x?xi8>) {
 }
 
 func.func @main() {
-  // Case 1: both zero points non-zero, scale = 2^30 * 2^-34 = 1/16.
-  // Accumulators and scaled values (before out_zp and clamping):
-  //   [  -287 -> -17.94 -> -18,   987 -> 61.69 -> 62,
-  //    -23477 -> -1467 (sat),   20441 -> 1278 (sat) ]
-  //   [     8 ->   0.5 ->   1,    282 -> 17.63 -> 18,
-  //     -1608 ->  -100.5 -> -100,  512 -> 32 ]
-  // The two .5 cases pin down round-half-up: 0.5 -> 1 and -100.5 -> -100.
   %a = arith.constant dense<[[-128, 0, 127],
                              [  10, -7, 50]]> : tensor<2x3xi8>
   %b = arith.constant dense<[[ 1, -3,  127, -128],
@@ -53,9 +40,6 @@ func.func @main() {
   %rd = tensor.cast %r : tensor<2x4xi8> to tensor<?x?xi8>
   call @print(%rd) : (tensor<?x?xi8>) -> ()
 
-  // Case 2: a multiplier that is not a power of two (~0.7071 * 2^-5).
-  //   [ 7046 -> 155.70 -> 156 (sat), -8701 -> -192.27 -> -192 (sat) ]
-  //   [-1226 -> -27.09 -> -27,        1273 ->   28.13 ->   28 ]
   %c = arith.constant dense<[[127, -128, 64, -1],
                              [-50,   33, -2, 90]]> : tensor<2x4xi8>
   %d = arith.constant dense<[[  3,   -7],

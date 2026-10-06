@@ -21,12 +21,6 @@ def DSP_Dialect : Dialect {
   }];
 }
 
-//===----------------------------------------------------------------------===//
-// Type constraints -- L1 invariants are enforced in the *type system*, so
-// ill-typed IR cannot even parse. (dynamic shapes / non-f32 are rejected at
-// parse time, not by a verifier that a later pass might forget to run.)
-//===----------------------------------------------------------------------===//
-
 def DSP_Tensor : Type<
   StaticShapeTensorOf<[F32]>.predicate,
   "statically shaped tensor of f32",
@@ -51,4 +45,4 @@ class DSP_I8TensorOfRank<int rank> : Type<
 class DSP_Op<string mnemonic, list<Trait> traits = []>
     : Op<DSP_Dialect, mnemonic, traits>;
 
-#endif // NANODSP_DIALECT_DSP_IR_DSPBASE_TD
+#endif

@@ -3,10 +3,6 @@
 
 include "nanodsp/Dialect/DSP/IR/DSPBase.td"
 
-//===----------------------------------------------------------------------===//
-// dsp.add
-//===----------------------------------------------------------------------===//
-
 def DSP_AddOp : DSP_Op<"add", [Pure, SameOperandsAndResultType]> {
   let summary = "Elementwise addition of two identically shaped f32 tensors.";
   let description = [{
@@ -32,10 +28,6 @@ def DSP_AddOp : DSP_Op<"add", [Pure, SameOperandsAndResultType]> {
   ];
 }
 
-//===----------------------------------------------------------------------===//
-// dsp.relu
-//===----------------------------------------------------------------------===//
-
 def DSP_ReluOp : DSP_Op<"relu", [Pure, SameOperandsAndResultType]> {
   let summary = "Elementwise max(x, 0) with NaN propagation.";
   let description = [{
@@ -55,7 +47,6 @@ def DSP_ReluOp : DSP_Op<"relu", [Pure, SameOperandsAndResultType]> {
     $input attr-dict `:` type($result)
   }];
 
-  // relu is idempotent: relu(relu(x)) -> relu(x)
   let hasCanonicalizeMethod = 1;
 
   let builders = [
@@ -64,10 +55,6 @@ def DSP_ReluOp : DSP_Op<"relu", [Pure, SameOperandsAndResultType]> {
     }]>
   ];
 }
-
-//===----------------------------------------------------------------------===//
-// dsp.matmul
-//===----------------------------------------------------------------------===//
 
 def DSP_MatmulOp : DSP_Op<"matmul", [Pure]> {
   let summary = "Row-major 2-D matrix multiply: (MxK) * (KxN) -> (MxN).";
@@ -92,10 +79,6 @@ def DSP_MatmulOp : DSP_Op<"matmul", [Pure]> {
     }]>
   ];
 }
-
-//===----------------------------------------------------------------------===//
-// dsp.conv2d
-//===----------------------------------------------------------------------===//
 
 def DSP_Conv2DOp : DSP_Op<"conv2d", [Pure]> {
   let summary = "2-D cross-correlation, NHWC input x HWCF filter -> NHWF output.";
@@ -142,10 +125,6 @@ def DSP_Conv2DOp : DSP_Op<"conv2d", [Pure]> {
     }]>
   ];
 }
-
-//===----------------------------------------------------------------------===//
-// dsp.qmatmul
-//===----------------------------------------------------------------------===//
 
 def DSP_QMatmulOp : DSP_Op<"qmatmul", [Pure]> {
   let summary = "int8 matmul with zero points and fixed-point requantization.";
@@ -199,4 +178,4 @@ def DSP_QMatmulOp : DSP_Op<"qmatmul", [Pure]> {
   let hasVerifier = 1;
 }
 
-#endif // NANODSP_DIALECT_DSP_IR_DSPOPS_TD
+#endif

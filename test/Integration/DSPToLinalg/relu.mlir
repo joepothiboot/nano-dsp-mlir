@@ -7,8 +7,6 @@
 func.func private @printMemrefF32(%ptr : tensor<*xf32>)
 
 func.func @main() {
-  // Covers: negative, negative-zero-adjacent, exact zero, positive, and a
-  // large-magnitude negative.
   %a = arith.constant dense<[[-2.0, -1.0, 0.0, 1.0, 2.0, -3.0]]> : tensor<1x6xf32>
 
   %r = dsp.relu %a : tensor<1x6xf32>

@@ -1,7 +1,3 @@
-// Negative control for bit-exact.mlir: a schedule that really reassociates.
-// split_reduction computes 4 partial sums over k and adds them at the end,
-// which changes rounding. bit-exact.mlir expects this run to differ from the
-// reference; if it didn't, the diff checks there would prove nothing.
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(
       %root: !transform.any_op {transform.readonly}) {

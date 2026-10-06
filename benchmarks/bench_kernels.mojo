@@ -1,7 +1,3 @@
-# Throughput of the Mojo kernels, using the timing policy in harness.cpp.
-#
-# Run from the repo root:  pixi run bench
-
 from std.sys import simd_width_of
 from std.time import perf_counter_ns
 from std.benchmark import keep
@@ -36,47 +32,62 @@ def time_samples(run: Some[def() raises]) raises -> Timing:
     run()
     var iterations = 1
     var t0 = perf_counter_ns()
+
     for _ in range(iterations):
         run()
+
     var elapsed = perf_counter_ns() - t0
+
     while elapsed < MIN_SAMPLE_NS:
         iterations *= 2
         t0 = perf_counter_ns()
+
         for _ in range(iterations):
             run()
+
         elapsed = perf_counter_ns() - t0
+
     var sample_times = List[Float64]()
     sample_times.append(Float64(elapsed) / Float64(iterations))
+
     for _ in range(1, SAMPLES):
         t0 = perf_counter_ns()
+
         for _ in range(iterations):
             run()
+
         elapsed = perf_counter_ns() - t0
         sample_times.append(Float64(elapsed) / Float64(iterations))
 
     var best = sample_times[0]
     var total = Float64(0)
     var ordered_times = sample_times.copy()
+
     for i in range(SAMPLES):
         total += sample_times[i]
         best = min(best, sample_times[i])
         var smallest = i
+
         for j in range(i + 1, SAMPLES):
             if ordered_times[j] < ordered_times[smallest]:
                 smallest = j
+
         var swap = ordered_times[i]
         ordered_times[i] = ordered_times[smallest]
         ordered_times[smallest] = swap
 
     var mean = total / Float64(SAMPLES)
     var squared_deviations = Float64(0)
+
     for sample in sample_times:
         var difference = sample - mean
         squared_deviations += difference * difference
+
     var sample_stddev = sqrt(squared_deviations / Float64(SAMPLES - 1))
     var median = (
         ordered_times[SAMPLES // 2 - 1] + ordered_times[SAMPLES // 2]
     ) / 2.0
+
     return Timing(best, median, sample_stddev)
 
 
@@ -106,14 +117,17 @@ def report(
 
 def fill_value(i: Int, j: Int, k: Int = 0, l: Int = 0) -> Float32:
     var pattern = (7 * i + 3 * j + 5 * k + 11 * l) % 13
+
     return Float32(pattern) * Float32(0.37) - Float32(1.9)
 
 
 def make_matrix(n: Int, salt: Int) raises -> Tensor[F32]:
     var result = Tensor[F32]([n, n])
+
     for i in range(n):
         for j in range(n):
             result.data[i * n + j] = fill_value(i, j, salt)
+
     return result^
 
 
@@ -153,6 +167,7 @@ def bench_matmul_tiled[
     var mode = "tiled-reuse"
     comptime if allocate_output:
         mode = "tiled-alloc"
+
     var shape = String(n) + "x" + String(n) + "x" + String(n)
     var label = mode + " " + String(tile_m) + "x" + String(tile_n)
     comptime if allocate_output:
@@ -163,12 +178,14 @@ def bench_matmul_tiled[
 
 def make_conv_input(hw: Int, channels: Int, salt: Int) raises -> Tensor[F32]:
     var result = Tensor[F32]([1, hw, hw, channels])
+
     for y in range(hw):
         for x in range(hw):
             for c in range(channels):
                 result.data[(y * hw + x) * channels + c] = fill_value(
                     salt, y, x, c
                 )
+
     return result^
 
 
@@ -176,6 +193,7 @@ def make_conv_filter(
     channels: Int, filters: Int, salt: Int
 ) raises -> Tensor[F32]:
     var result = Tensor[F32]([3, 3, channels, filters])
+
     for ky in range(3):
         for kx in range(3):
             for c in range(channels):
@@ -183,6 +201,7 @@ def make_conv_filter(
                     result.data[
                         ((ky * 3 + kx) * channels + c) * filters + f
                     ] = fill_value(ky + salt, kx, c, f)
+
     return result^
 
 
@@ -204,8 +223,10 @@ def bench_conv2d(hw: Int, c: Int, f: Int) raises:
 
 def make_qmatrix(n: Int, multiplier: Int, addend: Int) raises -> Tensor[I8]:
     var result = Tensor[I8]([n, n])
+
     for i in range(n * n):
         result.data[i] = Int8((i * multiplier + addend) % 256 - 128)
+
     return result^
 
 
@@ -225,9 +246,11 @@ def bench_qmatmul(n: Int) raises:
 def main() raises:
     for n in [64, 128, 256, 512]:
         bench_matmul(n)
+
     for n in [256, 512]:
         bench_matmul_tiled[4, 4 * W, allocate_output=True](n)
         bench_matmul_tiled[4, 4 * W, allocate_output=False](n)
+
     bench_conv2d(56, 64, 64)
     bench_conv2d(28, 128, 128)
     bench_qmatmul(256)

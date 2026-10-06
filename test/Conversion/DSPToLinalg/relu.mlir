@@ -12,7 +12,6 @@
 //  CHECK-SAME:     ins(%[[A]] : tensor<8xf32>)
 //  CHECK-SAME:     outs(%[[E]] : tensor<8xf32>)
 //       CHECK:   ^bb0(%[[IN:.*]]: f32, %{{.*}}: f32):
-// NaN-propagating max is required; maxnumf would be wrong.
 //       CHECK:     %[[R:.*]] = arith.maximumf %[[IN]], %[[Z]] : f32
 //   CHECK-NOT:     arith.maxnumf
 //       CHECK:     linalg.yield %[[R]] : f32

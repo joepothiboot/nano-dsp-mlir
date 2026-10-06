@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""cuBLAS sgemm on the same shapes and inputs as bench_gpu.mojo, as the
-library baseline for the Mojo GPU matmuls. Prints results.json-shaped JSON.
-
-    python benchmarks/bench_cublas.py > build/bench/results-cublas.json
-
-Needs an NVIDIA GPU and CuPy (preinstalled on Colab and Kaggle). TF32 stays
-off (CuPy's default; CUPY_TF32=1 would turn it on).
-
-cuBLAS sums in its own order and may fuse multiply-add, so it can't match the
-reference bit for bit. It is checked against a float64 product instead: any
-f32 summation order of n products lies within gamma_n * sum|a*b| of the exact
-sum, gamma_n = n*u / (1 - n*u), u = 2^-24 (Higham, Accuracy and Stability of
-Numerical Algorithms, sec. 3.1). `bound_used` is the largest fraction of that
-bound any output uses; a dropped or wrong product would exceed 1.
-"""
 import json
 import os
 import time
@@ -26,30 +11,37 @@ MIN_SAMPLE_S = 0.05
 
 
 def inexact(shape, seed):
-    """The same values as `inexact` in bench_gpu.mojo, bit for bit."""
     i = np.arange(np.prod(shape), dtype=np.int64)
     v = ((i + seed) * 2654435761) % 1000003
+
     return (v.astype(np.float32) / np.float32(997.0) - np.float32(500.0)).reshape(shape)
 
 
 def time_samples(run):
-    """bench_kernels.mojo's policy: warm up, double the calls until a sample
-    takes MIN_SAMPLE_S, then SAMPLES samples. Seconds per call."""
     run()
     n = 1
+
     while True:
         t0 = time.perf_counter()
+
         for _ in range(n):
             run()
+
         if time.perf_counter() - t0 >= MIN_SAMPLE_S:
             break
+
         n *= 2
+
     samples = []
+
     for _ in range(SAMPLES):
         t0 = time.perf_counter()
+
         for _ in range(n):
             run()
+
         samples.append((time.perf_counter() - t0) / n)
+
     return min(samples), float(np.median(samples)), float(np.std(samples, ddof=1))
 
 
@@ -57,6 +49,7 @@ def main():
     assert os.environ.get("CUPY_TF32", "0") == "0", "unset CUPY_TF32: TF32 is not an f32 baseline"
     device = cp.cuda.runtime.getDeviceProperties(0)["name"].decode()
     rows = []
+
     for n in [256, 512, 1024, 2048]:
         a, b = inexact((n, n), 1), inexact((n, n), 2)
         da, db = cp.asarray(a), cp.asarray(b)
@@ -66,6 +59,7 @@ def main():
         gamma = n * u / (1 - n * u)
         bound = gamma * (np.abs(a).astype(np.float64) @ np.abs(b).astype(np.float64))
         used = float(np.max(np.abs(c - exact) / bound))
+
         if used > 1:
             raise SystemExit(f"cuBLAS {n}: outside the reordering bound ({used:.2f})")
 
@@ -85,6 +79,7 @@ def main():
                 "checked": "within-bound", "bound_used": used,
             }
         )
+
     context = {"device": device, "timing": "cupy.matmul + synchronize per call; best of 10 samples of >= 50 ms"}
     print(json.dumps({"context": context, "benchmarks": rows}, indent=1))
 

@@ -1,7 +1,3 @@
-// The scheduled matmul must reach machine code as full-width vector
-// multiplies and adds, never scalar multiplies and never FMA (which would
-// break bit-exactness).
-//
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg -nanodsp-optimize=target=host-neon \
 // RUN:     -nanodsp-lower-to-llvm \
 // RUN: | mlir-translate --mlir-to-llvmir \
@@ -16,18 +12,14 @@
 // RUN:     -nanodsp-lower-to-llvm \
 // RUN: | FileCheck %s --check-prefix=STACK
 
-// host-neon: 4x16 register tile = 4 rows x 4 q-registers.
 // NEON-COUNT-16: fmul.4s
 // NEON-NOT:      fmla
 // NEON-NOT:      fmul s{{[0-9]+}}
 
-// x86-avx2: 4x24 register tile = 4 rows x 3 ymm registers.
 // AVX2-COUNT-12: vmulps {{.*}}%ymm
 // AVX2-NOT:      vfmadd
 // AVX2-NOT:      vmulss
 
-// No stack temporaries for the register tile: an alloca inside the loop nest
-// grows the stack every iteration (overflowed it on a 128x128 matmul).
 // STACK-LABEL:   llvm.func @matmul(
 // STACK-NOT:     llvm.alloca
 

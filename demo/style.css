@@ -1,0 +1,180 @@
+body {
+  font-family: Georgia, serif;
+  max-width: 900px;
+  margin: 2em auto;
+  padding: 0 1em;
+  line-height: 1.5;
+}
+code,
+pre {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+pre {
+  border: 1px solid #999;
+  padding: 8px;
+  overflow: auto;
+  max-height: 400px;
+}
+.road {
+  list-style: none;
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid #000;
+}
+.road .todo {
+  color: #666;
+}
+section {
+  margin-top: 2em;
+}
+.eyebrow,
+.badge,
+.st {
+  color: #666;
+  font-size: 13px;
+  margin-right: 1em;
+}
+.badges,
+.stats,
+.runs,
+.roadmap,
+.levels,
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em 1.5em;
+}
+.stat,
+.run,
+.step,
+.col {
+  display: flex;
+  flex-direction: column;
+}
+.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1em;
+}
+.col {
+  min-width: 0;
+}
+.bad {
+  color: #a00;
+}
+.badge.ok {
+  color: #060;
+  font-weight: bold;
+}
+.stat .v,
+.run .res {
+  font-size: 28px;
+  font-weight: bold;
+}
+.stat,
+.run {
+  border-left: 4px solid #000;
+  padding-left: 8px;
+}
+.run.bad {
+  border-color: #a00;
+}
+[aria-pressed="true"],
+[aria-selected="true"] {
+  font-weight: bold;
+}
+.bar {
+  position: relative;
+  height: 16px;
+  border: 1px solid #000;
+}
+.fill {
+  height: 100%;
+  background: #888;
+}
+.gpu-chart {
+  --series-ours: #2a78d6;
+  --series-lib: #eb6834;
+  --text-secondary: #555;
+  --grid: #ddd;
+  margin: 1em 0;
+  position: relative;
+}
+.gpu-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em 1.5em;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 0.75em;
+}
+.gpu-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.gpu-group {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0.75em 0 0.25em;
+}
+.gpu-row {
+  display: grid;
+  grid-template-columns: 5.5em 1fr;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 28px;
+}
+.gpu-row .lbl {
+  font-size: 13px;
+  text-align: right;
+}
+.gpu-track {
+  position: relative;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(var(--grid), var(--grid)) left / 1px 100%
+    no-repeat;
+}
+.gpu-bar {
+  flex-shrink: 0;
+  height: 20px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+}
+.gpu-val {
+  font-size: 13px;
+  white-space: nowrap;
+}
+.gpu-tip {
+  position: absolute;
+  pointer-events: none;
+  background: #fff;
+  border: 1px solid #999;
+  padding: 4px 8px;
+  font-size: 13px;
+  white-space: nowrap;
+  display: none;
+  z-index: 1;
+}
+@media (max-width: 600px) {
+  .two {
+    grid-template-columns: 1fr;
+  }
+  .gpu-row {
+    grid-template-columns: 3.5em 1fr;
+  }
+}
+.mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #000;
+}
