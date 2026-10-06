@@ -76,9 +76,8 @@ def strip_comments(text):
 def target_models():
     src = (ROOT / "lib" / "Schedule" / "TargetModel.cpp").read_text()
     pat = re.compile(
-        r'\{"(?P<name>[\w-]+)",\s*/\*vectorBits=\*/(?P<bits>\d+),\s*'
-        r"/\*numVectorRegs=\*/(?P<regs>\d+),\s*/\*cacheBytes=\*/(?P<cache>[\d *]+),"
-        r"\s*/\*cacheFraction=\*/(?P<frac>[\d.]+)")
+        r'\{"(?P<name>[\w-]+)",\s*(?P<bits>\d+),\s*(?P<regs>\d+),\s*'
+        r"(?P<cache>[\d *]+),\s*(?P<frac>[\d.]+)")
     models = {}
 
     for m in pat.finditer(src):
@@ -128,7 +127,9 @@ def count_values(printed):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(
+        description="Build the demo page from real compiler output."
+    )
     ap.add_argument("--build-dir", default=str(ROOT / "build"))
     ap.add_argument("--skip-tests", action="store_true",
                     help="don't run ./test.sh (the test badge is omitted)")
@@ -250,6 +251,9 @@ def main():
     out_dir = build / "demo"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "index.html").write_text(template.replace("__DEMO_DATA__", payload))
+
+    for asset in ("style.css", "app.js"):
+        shutil.copy(ROOT / "demo" / asset, out_dir / asset)
     print(out_dir / "index.html")
 
 

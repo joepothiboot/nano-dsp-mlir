@@ -240,7 +240,8 @@ One page that traces `demo/matmul.mlir` from the `dsp` dialect to NEON and
 AVX2 machine code, shows the tile sizes each target model picks, and reports
 the bit-exact results. The script runs the real tools (`nanodsp-opt`, `llc`,
 `mlir-runner`, the lit suite) and injects their output into
-`demo/template.html`, so nothing on the page is written by hand.
+`demo/template.html` (styled by `demo/style.css`, driven by `demo/app.js`),
+so nothing on the page is written by hand.
 
 ### 🔶 Hexagon (emulated)
 
