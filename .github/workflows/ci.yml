@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 jobs:
@@ -13,8 +14,6 @@ jobs:
       - run: npx --yes prettier@3 --check .
 
   test:
-    # Apple Silicon + Homebrew LLVM, matching the development setup that
-    # test.sh auto-detects.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +32,22 @@ jobs:
       - name: C++ reference golden tests
         run: pixi run test-reference
 
-      # Builds the benchmark kernels and checks them against the C++
-      # reference; no timing on shared runners.
       - name: Benchmark kernels (correctness only)
         run: pixi run bench-check
 
       - name: Mojo kernel tests
         run: pixi run test-mojo
+
+  notify-lab:
+    needs: [format, test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tell compiler-tooling-lab to re-pin
+        env:
+          GH_TOKEN: ${{ secrets.LAB_DISPATCH_TOKEN }}
+        run: >
+          gh api repos/joepothiboot/compiler-tooling-lab/dispatches
+          -f event_type=project-release
+          -f "client_payload[project]=nano-dsp-mlir"
+          -f "client_payload[ref]=$GITHUB_REF_NAME"
