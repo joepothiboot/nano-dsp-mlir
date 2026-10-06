@@ -23,11 +23,9 @@ namespace nanodsp {
 #define GEN_PASS_REGISTRATION
 #include "nanodsp/Schedule/Passes.h.inc"
 
-/// Registers -nanodsp-lower-to-llvm: bufferization plus the upstream lowering
-/// from linalg/scf/vector on tensors down to the LLVM dialect (L3 -> L5).
 void registerNanoDSPPipelines();
 
-} // namespace nanodsp
-} // namespace mlir
+}
+}
 
-#endif // NANODSP_SCHEDULE_PASSES_H
+#endif

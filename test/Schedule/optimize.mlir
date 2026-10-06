@@ -10,10 +10,6 @@
 // BAD-TARGET: error: unknown target 'no-such-target' (known: host-neon, x86-avx2, hexagon-hvx128)
 // BAD-FILE: no-such-schedule.mlir
 
-// Matmul becomes cache-tile loops around register-tile loops around an
-// unfused 2-D vector multiply and add: no vector.contract (which would lower
-// to FMA), no trailing unit dim (which would lower to scalar multiplies), and
-// no linalg.generic left. The schedule and the tags are gone.
 // CHECK-LABEL: func.func @matmul
 // CHECK-NOT:   linalg.generic
 // CHECK-NOT:   vector.contract
@@ -30,8 +26,6 @@ func.func @matmul(%a: tensor<128x256xf32>, %b: tensor<256x96xf32>) -> tensor<128
 
 // -----
 
-// Conv: after unit-dim folding the register tile is a 4 (ow) x 8 (f) update,
-// with the input column broadcast across f and the filter row across ow.
 // CHECK-LABEL: func.func @conv
 // CHECK-NOT:   linalg.generic
 // CHECK:       vector.transfer_read {{.*}} : tensor<4xf32>, vector<4x8xf32>
@@ -45,7 +39,6 @@ func.func @conv(%i: tensor<1x10x10x3xf32>, %f: tensor<3x3x3x8xf32>) -> tensor<1x
 
 // -----
 
-// relu keeps arith.maximumf (NaN-propagating) after vectorization.
 // CHECK-LABEL: func.func @relu
 // CHECK-NOT:   linalg.generic
 // CHECK:       arith.maximumf {{.*}} : vector<4xf32>

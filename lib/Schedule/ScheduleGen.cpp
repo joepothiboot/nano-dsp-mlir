@@ -1,11 +1,3 @@
-//===- ScheduleGen.cpp - Generate Transform-dialect schedules -------------===//
-//
-// The schedule is produced as text on purpose: it is the same artifact a user
-// checks in under schedules/ and edits by hand, so there is one format for
-// generated and hand-tuned schedules.
-//
-//===----------------------------------------------------------------------===//
-
 #include "nanodsp/Schedule/ScheduleGen.h"
 #include "nanodsp/Schedule/TileSizeModel.h"
 
@@ -24,6 +16,7 @@ mlir::nanodsp::tagScheduleTargets(Operation *root) {
         StringAttr::get(op.getContext(), "op" + std::to_string(ops.size())));
     ops.push_back(op);
   });
+
   return ops;
 }
 
@@ -37,22 +30,24 @@ static std::string joinSizes(ArrayRef<int64_t> sizes) {
   os << "[";
   llvm::interleaveComma(sizes, os);
   os << "]";
+
   return s;
 }
 
-/// Emits one tile_using_for and returns the handle to the tiled op. A size of
-/// 0 leaves that loop untiled; with no non-zero size nothing is emitted.
-/// `innermostLoop` is updated to the handle of the innermost generated loop.
 static std::string emitTile(llvm::raw_ostream &os, StringRef handle,
                             StringRef name, ArrayRef<int64_t> sizes,
                             std::string &innermostLoop) {
   unsigned numLoops = llvm::count_if(sizes, [](int64_t s) { return s != 0; });
+
   if (numLoops == 0)
     return handle.str();
+
   innermostLoop = llvm::formatv("{0}_loops#{1}", name, numLoops - 1).str();
   std::string types = "!transform.any_op";
+
   for (unsigned i = 0; i < numLoops; ++i)
     types += ", !transform.any_op";
+
   os << llvm::formatv("    %{0}, %{0}_loops:{1} = "
                       "transform.structured.tile_using_for %{2} tile_sizes "
                       "{3} : (!transform.any_op) -> ({4})\n",
@@ -70,19 +65,19 @@ std::string mlir::nanodsp::buildDefaultSchedule(ArrayRef<linalg::GenericOp> ops,
      << "  transform.named_sequence @__transform_main("
         "%root: !transform.any_op {transform.readonly}) {\n";
 
-  // Ops vectorized after unit-dim folding: (tag, innermost loop handle).
   SmallVector<std::pair<std::string, std::string>> deferred;
+
   for (linalg::GenericOp op : ops) {
     auto tag = op->getAttrOfType<StringAttr>(kScheduleTagAttr).getValue();
     FailureOr<TileSizes> sizes = computeTileSizes(op, target);
+
     if (failed(sizes)) {
       os << "    // " << tag << ": not handled by the tile-size model\n";
       continue;
     }
 
-    // tile_using_for sizes are relative to the op being tiled, and 0 means
-    // "do not tile this loop".
     SmallVector<int64_t> cacheSizes, regSizes;
+
     for (auto [range, cache, reg] :
          llvm::zip_equal(sizes->loopRanges, sizes->cache, sizes->reg)) {
       cacheSizes.push_back(cache == range ? 0 : cache);
@@ -102,24 +97,13 @@ std::string mlir::nanodsp::buildDefaultSchedule(ArrayRef<linalg::GenericOp> ops,
     std::string innermostLoop;
     std::string handle =
         emitTile(os, tag, (tag + "_cache").str(), cacheSizes, innermostLoop);
-    // The innermost cache-tile loop is where -nanodsp-promote-local stages
-    // operand tiles through local memory. Only targets that have local
-    // memory get the marker, so other schedules are unchanged.
     if (target.localMemBytes > 0 && !innermostLoop.empty())
       os << "    transform.annotate %" << innermostLoop << " \""
          << kCacheLoopAttr << "\" : !transform.any_op\n";
+
     handle =
         emitTile(os, handle, (tag + "_reg").str(), regSizes, innermostLoop);
 
-    // Register tiles are vectorized only after their unit dims are folded
-    // away (below, for all ops at once):
-    //  * a matmul tile is m x n x 1; vectorized as is, the trailing unit
-    //    dim survives as vector<4x16x1xf32>, which LLVM lowers to scalar
-    //    multiplies. Folded, it is a clean 2-D multiply-add.
-    //  * a conv's input map (oh + kh, ow + kw) is not a projected
-    //    permutation, which the vectorizer rejects, until kh and kw are gone.
-    // An op that got no loops has no unit dims to fold and no loop to find
-    // it through afterwards, so it is vectorized right away if it can be.
     bool projectedPermutations =
         llvm::all_of(op.getIndexingMapsArray(), [](AffineMap map) {
           return map.isProjectedPermutation();
@@ -137,8 +121,6 @@ std::string mlir::nanodsp::buildDefaultSchedule(ArrayRef<linalg::GenericOp> ops,
   os << "    %funcs = transform.structured.match ops{[\"func.func\"]} in "
         "%root : (!transform.any_op) -> !transform.any_op\n";
   if (!deferred.empty()) {
-    // Folding rewrites the ops (and drops their tags), so they are found
-    // again through the innermost loop of their register tile.
     os << "    transform.apply_patterns to %funcs {\n"
        << "      transform.apply_patterns.linalg."
           "fold_unit_extent_dims_via_slices\n"
@@ -153,6 +135,7 @@ std::string mlir::nanodsp::buildDefaultSchedule(ArrayRef<linalg::GenericOp> ops,
          << "_folded : !transform.any_op\n";
     }
   }
+
   os << "    transform.apply_patterns to %funcs {\n"
      << "      transform.apply_patterns.canonicalization\n"
      << "    } : !transform.any_op\n"

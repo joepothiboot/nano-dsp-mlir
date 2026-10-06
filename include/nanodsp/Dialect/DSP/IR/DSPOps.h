@@ -15,4 +15,4 @@
 #define GET_OP_CLASSES
 #include "nanodsp/Dialect/DSP/IR/DSPOps.h.inc"
 
-#endif // NANODSP_DIALECT_DSP_IR_DSPOPS_H
+#endif

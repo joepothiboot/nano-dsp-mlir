@@ -1,9 +1,5 @@
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg | FileCheck %s
 
-// qmatmul lowers to two generics: an i32 matmul-shaped accumulate with the
-// zero points subtracted after sign extension, then an elementwise
-// requantize done entirely in i64 integer arithmetic.
-
 // CHECK-DAG: #[[LHS:.*]] = affine_map<(d0, d1, d2) -> (d0, d2)>
 // CHECK-DAG: #[[RHS:.*]] = affine_map<(d0, d1, d2) -> (d2, d1)>
 // CHECK-DAG: #[[OUT:.*]] = affine_map<(d0, d1, d2) -> (d0, d1)>
@@ -29,8 +25,6 @@
 //       CHECK:     %[[SUM:.*]] = arith.addi %[[S]], %[[P]] : i32
 //       CHECK:     linalg.yield %[[SUM]] : i32
 
-// Requantize constants: multiplier, rounding term 2^(31+3-1), shift 31+3,
-// out_zp as a *signed* -5, and the i8 clamp bounds.
 //   CHECK-DAG:   %[[MUL:.*]] = arith.constant 1073741824 : i64
 //   CHECK-DAG:   %[[RND:.*]] = arith.constant 8589934592 : i64
 //   CHECK-DAG:   %[[SH:.*]] = arith.constant 34 : i64

@@ -14,8 +14,6 @@ concurrency:
 
 jobs:
   build:
-    # Apple Silicon + Homebrew LLVM, matching the development setup that
-    # test.sh and gen_demo.py auto-detect.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4

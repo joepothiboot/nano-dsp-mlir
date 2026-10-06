@@ -22,8 +22,6 @@ func.func @add_2d(%a: tensor<2x3xf32>, %b: tensor<2x3xf32>) -> tensor<2x3xf32> {
 
 // -----
 
-// Rank generality: identity maps must follow the operand rank, and the
-// destination must NOT be zero-filled (every element is written).
 // CHECK: #[[ID4:.*]] = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
 // CHECK-LABEL: func.func @add_4d
 //       CHECK:   tensor.empty() : tensor<1x4x4x2xf32>

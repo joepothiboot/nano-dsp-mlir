@@ -1,17 +1,3 @@
-// Differential test for -nanodsp-promote-local: staging cache tiles through
-// local memory (#dsp.local, DMAs lowered to copies by -nanodsp-lower-local)
-// must not change a single bit of the result. Shapes are large enough that
-// the hexagon-hvx128 model (256 KiB tile budget) cuts the matmul along k and
-// the conv along output rows, so the promoted loops run several iterations
-// and the double-buffered DMAs alternate between both buffers. The
-// single-buffered variant (double-buffer=false) is checked too.
-//
-// The promoted kernels run on the host: the hexagon-hvx128 schedule's
-// 1024-bit vectors are legalized by the AArch64/x86 backend. What is checked
-// is the promotion, not Hexagon code generation (scripts/run-hexagon.sh
-// does that on an emulated core).
-//
-// The promotion really happens (otherwise the diffs below prove nothing):
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg -nanodsp-optimize=target=hexagon-hvx128 \
 // RUN:     -nanodsp-bufferize -nanodsp-promote-local=target=hexagon-hvx128 \
 // RUN: | FileCheck %s --check-prefix=PROMOTED
@@ -29,7 +15,6 @@
 // PROMOTED:            memref.dma_start
 // PROMOTED:          memref.dma_wait
 // PROMOTED:        } {nanodsp.cache_loop}
-//
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg \
 // RUN: | mlir-opt %stock_lower_to_llvm \
 // RUN: | mlir-runner -e main --entry-point-result=void \
@@ -59,8 +44,6 @@
 
 func.func private @printMemrefI32(%ptr : tensor<*xi32>)
 
-// v = ((7 * i + 3 * j + 5 * k + 11 * l) mod 13) * 0.37 - 1.9. Fractional
-// values whose partial sums round, so summation order is visible in the bits.
 func.func @fill2(%i: index, %j: index) -> f32 {
   %z = arith.constant 0 : index
   %r = func.call @fill4(%i, %j, %z, %z) : (index, index, index, index) -> f32
@@ -89,7 +72,6 @@ func.func @fill4(%i: index, %j: index, %k: index, %l: index) -> f32 {
   return %v : f32
 }
 
-// Per-element bitcast; arith.bitcast on a whole tensor does not bufferize.
 func.func @print2(%t: tensor<?x?xf32>) {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
@@ -126,9 +108,6 @@ func.func @print4(%t: tensor<?x?x?x?xf32>) {
 }
 
 func.func @main() {
-  // Matmul: the k loop is cut into 64-wide cache tiles; the 256x64 A tile
-  // needs a strided DMA (rows of 64, 256 apart), the 64x128 B tile is one
-  // contiguous run.
   %a = tensor.generate {
   ^bb0(%i: index, %j: index):
     %v = func.call @fill2(%i, %j) : (index, index) -> f32
@@ -143,7 +122,6 @@ func.func @main() {
   %mmd = tensor.cast %mm : tensor<256x128xf32> to tensor<?x?xf32>
   call @print2(%mmd) : (tensor<?x?xf32>) -> ()
 
-  // Conv: one output row per cache tile; its 3-row input window is promoted.
   %in = tensor.generate {
   ^bb0(%n: index, %h: index, %w: index, %c: index):
     %v = func.call @fill4(%n, %h, %w, %c) : (index, index, index, index) -> f32
@@ -160,7 +138,5 @@ func.func @main() {
   return
 }
 
-// Sanity-check the reference itself, so an empty or crashing run cannot make
-// the diffs pass trivially.
 // CHECK: sizes = [256, 128]
 // CHECK: sizes = [1, 32, 32, 64]

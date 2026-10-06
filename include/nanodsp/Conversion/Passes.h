@@ -9,7 +9,7 @@ namespace nanodsp {
 #define GEN_PASS_REGISTRATION
 #include "nanodsp/Conversion/Passes.h.inc"
 
-} // namespace nanodsp
-} // namespace mlir
+}
+}
 
-#endif // NANODSP_CONVERSION_PASSES_H
+#endif

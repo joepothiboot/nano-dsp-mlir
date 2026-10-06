@@ -1,5 +1,3 @@
-//===- Passes.cpp - Stage 3 schedule passes and the lowering pipeline -----===//
-
 #include "nanodsp/Schedule/Passes.h"
 #include "nanodsp/Schedule/ScheduleGen.h"
 #include "nanodsp/Schedule/TargetModel.h"
@@ -18,17 +16,14 @@ namespace nanodsp {
 #define GEN_PASS_DEF_NANODSPOPTIMIZE
 #define GEN_PASS_DEF_NANODSPEMITSCHEDULE
 #include "nanodsp/Schedule/Passes.h.inc"
-} // namespace nanodsp
-} // namespace mlir
+}
+}
 
 using namespace mlir;
 using namespace mlir::nanodsp;
 
 namespace {
 
-/// The transform ops a schedule uses (structured.*, apply_patterns.vector.*)
-/// are dialect extensions, which must be registered before the schedule is
-/// parsed.
 void registerScheduleExtensions(DialectRegistry &registry) {
   linalg::registerTransformDialectExtension(registry);
   vector::registerTransformDialectExtension(registry);
@@ -51,15 +46,19 @@ struct NanoDSPOptimizePass
 
     OwningOpRef<ModuleOp> schedule;
     ParserConfig config(ctx);
+
     if (scheduleFile.empty()) {
       std::optional<TargetModel> target = lookupTarget(targetName, module);
+
       if (!target)
         return signalPassFailure();
+
       schedule = parseSourceString<ModuleOp>(buildDefaultSchedule(ops, *target),
                                              config, "nanodsp-schedule");
     } else {
       schedule = parseSourceFile<ModuleOp>(scheduleFile, config);
     }
+
     if (!schedule)
       return signalPassFailure();
 
@@ -67,8 +66,10 @@ struct NanoDSPOptimizePass
         schedule->lookupSymbol<transform::NamedSequenceOp>("__transform_main");
     if (!entry) {
       module.emitError() << "schedule has no @__transform_main";
+
       return signalPassFailure();
     }
+
     if (failed(transform::applyTransformNamedSequence(
             module, entry, *schedule, transform::TransformOptions())))
       return signalPassFailure();
@@ -77,14 +78,14 @@ struct NanoDSPOptimizePass
   }
 };
 
-/// Records the model's decision on each op, so tools and tests can read it
-/// without re-deriving it from the schedule.
 void annotateTileSizes(ArrayRef<linalg::GenericOp> ops,
                        const TargetModel &target) {
   for (linalg::GenericOp op : ops) {
     FailureOr<TileSizes> sizes = computeTileSizes(op, target);
+
     if (failed(sizes))
       continue;
+
     Builder b(op.getContext());
     op->setAttr("nanodsp.loop_ranges",
                 b.getDenseI64ArrayAttr(sizes->loopRanges));
@@ -109,6 +110,7 @@ struct NanoDSPEmitSchedulePass
   void runOnOperation() override {
     ModuleOp module = getOperation();
     std::optional<TargetModel> target = lookupTarget(targetName, module);
+
     if (!target)
       return signalPassFailure();
 
@@ -119,23 +121,13 @@ struct NanoDSPEmitSchedulePass
         "nanodsp-schedule");
     if (!schedule)
       return signalPassFailure();
+
     module.getBody()->push_back(schedule.release());
   }
 };
 
-} // namespace
+}
 
-// Bufferize, then the upstream lowering to the LLVM dialect. Function
-// arguments and results become identity-layout memrefs, so a kernel with
-// llvm.emit_c_interface is callable from C with a plain descriptor struct
-// (see test/Hexagon/harness.cpp). The vector
-// passes are no-ops on unscheduled (scalar-loop) IR, so this pipeline serves
-// both the scheduled and the unscheduled path.
-//
-// It is two halves: -nanodsp-bufferize (tensors -> memrefs, deallocations
-// explicit) and -nanodsp-lower-bufferized-to-llvm. With local-target=<name>, -nanodsp-promote-local
-// and -nanodsp-lower-local run in between, on bufferized IR that still has
-// the scheduled loop structure.
 namespace {
 struct LowerBufferizedOptions
     : public PassPipelineOptions<LowerBufferizedOptions> {
@@ -163,7 +155,7 @@ struct LowerToLLVMOptions : public PassPipelineOptions<LowerToLLVMOptions> {
           "(-nanodsp-lower-local). Empty: no promotion."),
       llvm::cl::init("")};
 };
-} // namespace
+}
 
 static constexpr llvm::StringLiteral kBufferizePipeline =
     "one-shot-bufferize{bufferize-function-boundaries "
@@ -173,11 +165,6 @@ static constexpr llvm::StringLiteral kBufferizePipeline =
 static std::string lowerBufferizedPipeline(bool genericAlloc) {
   return std::string("convert-linalg-to-loops,"
                      "func.func(lower-vector-multi-reduction),"
-                     // full-unroll: lower n-D transfers to 1-D ones in
-                     // place. The default path stages them through a
-                     // memref.alloca inside the innermost loop; with no
-                     // stack restore that grows the stack every iteration
-                     // and overflows it on larger tiled kernels.
                      "convert-vector-to-scf{full-unroll=true},"
                      "lower-affine,"
                      "convert-scf-to-cf,"
@@ -218,12 +205,14 @@ void mlir::nanodsp::registerNanoDSPPipelines() {
       "Bufferize and lower linalg/scf/vector on tensors to the LLVM dialect.",
       [](OpPassManager &pm, const LowerToLLVMOptions &options) {
         addPipeline(pm, kBufferizePipeline);
+
         if (!options.localTarget.empty()) {
           NanoDSPPromoteLocalOptions promote;
           promote.targetName = options.localTarget;
           pm.addPass(createNanoDSPPromoteLocal(promote));
           pm.addPass(createNanoDSPLowerLocal());
         }
+
         addPipeline(pm, lowerBufferizedPipeline(options.genericAlloc));
       });
 }

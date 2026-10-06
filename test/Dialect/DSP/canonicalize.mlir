@@ -12,7 +12,6 @@ func.func @relu_idempotent(%a: tensor<4xf32>) -> tensor<4xf32> {
 
 // -----
 
-// Three deep collapses to one.
 // CHECK-LABEL: func.func @relu_triple
 //       CHECK:   dsp.relu
 //   CHECK-NOT:   dsp.relu
@@ -25,7 +24,6 @@ func.func @relu_triple(%a: tensor<4xf32>) -> tensor<4xf32> {
 
 // -----
 
-// An intervening add must block the fold.
 // CHECK-LABEL: func.func @relu_not_adjacent
 //       CHECK:   dsp.relu
 //       CHECK:   dsp.add

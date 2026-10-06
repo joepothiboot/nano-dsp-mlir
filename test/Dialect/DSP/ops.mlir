@@ -37,7 +37,6 @@ func.func @conv2d_default(%in: tensor<1x8x8x3xf32>, %f: tensor<3x3x3x4xf32>) -> 
 
 // CHECK-LABEL: func.func @conv2d_strided_dilated
 func.func @conv2d_strided_dilated(%in: tensor<1x9x9x1xf32>, %f: tensor<3x3x1x1xf32>) -> tensor<1x3x3x1xf32> {
-  // OH = (9 - (3-1)*2 - 1)/2 + 1 = 3
   // CHECK: dsp.conv2d %{{.*}}, %{{.*}} {dilations = array<i64: 2, 2>, strides = array<i64: 2, 2>}
   %0 = dsp.conv2d %in, %f {strides = array<i64: 2, 2>, dilations = array<i64: 2, 2>}
      : (tensor<1x9x9x1xf32>, tensor<3x3x1x1xf32>) -> tensor<1x3x3x1xf32>

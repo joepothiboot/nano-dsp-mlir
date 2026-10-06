@@ -11,8 +11,6 @@
 int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
-  // Transform-dialect ops (structured.tile_using_for, vectorize, ...) and the
-  // interface implementations they rely on live in dialect extensions.
   mlir::registerAllExtensions(registry);
   mlir::registerAllPasses();
 

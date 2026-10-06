@@ -7,16 +7,10 @@
 func.func private @printMemrefF32(%ptr : tensor<*xf32>)
 
 func.func @main() {
-  // 1x3x3x2 input: channel 0 is all 1.0, channel 1 is all 10.0.
   %in = arith.constant dense<[[[[1.0, 10.0],[1.0, 10.0],[1.0, 10.0]],
                                [[1.0, 10.0],[1.0, 10.0],[1.0, 10.0]],
                                [[1.0, 10.0],[1.0, 10.0],[1.0, 10.0]]]]> : tensor<1x3x3x2xf32>
 
-  // 3x3x2x2 filter (HWCF).
-  //   output feature 0: weight 1.0 on channel 0, 0.0 on channel 1
-  //   output feature 1: weight 0.0 on channel 0, 1.0 on channel 1
-  // -> feature 0 = 9 * 1.0 = 9 ; feature 1 = 9 * 10.0 = 90
-  // Swapping the C and F positions in the filter map gives 0/99 instead.
   %f = arith.constant dense<[
     [[[1.0, 0.0],[0.0, 1.0]], [[1.0, 0.0],[0.0, 1.0]], [[1.0, 0.0],[0.0, 1.0]]],
     [[[1.0, 0.0],[0.0, 1.0]], [[1.0, 0.0],[0.0, 1.0]], [[1.0, 0.0],[0.0, 1.0]]],

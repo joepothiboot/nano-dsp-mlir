@@ -29,9 +29,9 @@ def NanoDSPOptimize : Pass<"nanodsp-optimize", "::mlir::ModuleOp"> {
   }];
 
   let options = [
-    Option<"targetName", "target", "std::string", /*default=*/"\"host-neon\"",
+    Option<"targetName", "target", "std::string", "\"host-neon\"",
            "TargetModel to derive tile sizes from">,
-    Option<"scheduleFile", "schedule-file", "std::string", /*default=*/"\"\"",
+    Option<"scheduleFile", "schedule-file", "std::string", "\"\"",
            "Apply the __transform_main sequence from this file instead of "
            "the generated schedule">,
   ];
@@ -53,7 +53,7 @@ def NanoDSPEmitSchedule : Pass<"nanodsp-emit-schedule", "::mlir::ModuleOp"> {
   }];
 
   let options = [
-    Option<"targetName", "target", "std::string", /*default=*/"\"host-neon\"",
+    Option<"targetName", "target", "std::string", "\"host-neon\"",
            "TargetModel to derive tile sizes from">,
   ];
 
@@ -88,9 +88,9 @@ def NanoDSPPromoteLocal : Pass<"nanodsp-promote-local", "::mlir::ModuleOp"> {
   }];
 
   let options = [
-    Option<"targetName", "target", "std::string", /*default=*/"\"host-neon\"",
+    Option<"targetName", "target", "std::string", "\"host-neon\"",
            "TargetModel whose localMemBytes bounds the promoted tiles">,
-    Option<"doubleBuffer", "double-buffer", "bool", /*default=*/"true",
+    Option<"doubleBuffer", "double-buffer", "bool", "true",
            "Double-buffer tiles that change with the loop, so the DMA for "
            "the next tile can overlap compute on the current one">,
   ];
@@ -125,4 +125,4 @@ def NanoDSPLowerLocal : Pass<"nanodsp-lower-local", "::mlir::ModuleOp"> {
   ];
 }
 
-#endif // NANODSP_SCHEDULE_PASSES_TD
+#endif

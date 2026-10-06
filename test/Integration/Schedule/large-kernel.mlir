@@ -1,11 +1,3 @@
-// A scheduled kernel with many register-tile iterations must run, and stay
-// bit-exact. convert-vector-to-scf's default lowering staged n-D transfers
-// through a memref.alloca at the start of the innermost scf.for; lowered to
-// cf, that alloca grew the stack on every iteration, and this matmul (131072
-// iterations on host-neon) overflowed it. -nanodsp-lower-to-llvm now lowers
-// transfers with full-unroll=true, which needs no temporaries
-// (test/Schedule/codegen.mlir checks the IR; this checks the run).
-//
 // RUN: nanodsp-opt %s -convert-dsp-to-linalg \
 // RUN: | mlir-opt %stock_lower_to_llvm \
 // RUN: | mlir-runner -e main --entry-point-result=void \
@@ -21,8 +13,6 @@
 
 func.func private @printMemrefI32(%ptr : tensor<*xi32>)
 
-// v = ((7 * i + 3 * j + 5 * k + 11 * l) mod 13) * 0.37 - 1.9. Fractional
-// values whose partial sums round, so summation order is visible in the bits.
 func.func @fill2(%i: index, %j: index) -> f32 {
   %z = arith.constant 0 : index
   %r = func.call @fill4(%i, %j, %z, %z) : (index, index, index, index) -> f32
@@ -51,7 +41,6 @@ func.func @fill4(%i: index, %j: index, %k: index, %l: index) -> f32 {
   return %v : f32
 }
 
-// Per-element bitcast; arith.bitcast on a whole tensor does not bufferize.
 func.func @print2(%t: tensor<?x?xf32>) {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
@@ -84,6 +73,4 @@ func.func @main() {
   return
 }
 
-// Sanity-check the reference itself, so an empty or crashing run cannot make
-// the diffs pass trivially.
 // CHECK: sizes = [256, 128]

@@ -8,7 +8,6 @@
 //  CHECK-SAME:   %[[A:.*]]: tensor<4x8xf32>, %[[B:.*]]: tensor<8x16xf32>
 //       CHECK:   %[[E:.*]] = tensor.empty() : tensor<4x16xf32>
 //       CHECK:   %[[Z:.*]] = arith.constant 0.000000e+00 : f32
-// A reduction destination MUST be zero-initialized -- this fill is load-bearing.
 //       CHECK:   %[[F:.*]] = linalg.fill ins(%[[Z]] : f32) outs(%[[E]] : tensor<4x16xf32>)
 //       CHECK:   %[[G:.*]] = linalg.generic
 //  CHECK-SAME:     indexing_maps = [#[[LHS]], #[[RHS]], #[[OUT]]]

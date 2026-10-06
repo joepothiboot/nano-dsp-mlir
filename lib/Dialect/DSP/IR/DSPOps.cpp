@@ -1,4 +1,5 @@
 #include "nanodsp/Dialect/DSP/IR/DSPOps.h"
+#include "nanodsp/Dialect/DSP/IR/DSPConstants.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/PatternMatch.h"
@@ -10,22 +11,16 @@ using namespace mlir::nanodsp;
 #define GET_OP_CLASSES
 #include "nanodsp/Dialect/DSP/IR/DSPOps.cpp.inc"
 
-//===----------------------------------------------------------------------===//
-// ReluOp
-//===----------------------------------------------------------------------===//
-
 LogicalResult ReluOp::canonicalize(ReluOp op, PatternRewriter &rewriter) {
-  // relu is idempotent -- max(max(x,0),0) == max(x,0), including for NaN.
   auto inner = op.getInput().getDefiningOp<ReluOp>();
+
   if (!inner)
     return failure();
+
   rewriter.replaceOp(op, inner.getResult());
+
   return success();
 }
-
-//===----------------------------------------------------------------------===//
-// MatmulOp
-//===----------------------------------------------------------------------===//
 
 LogicalResult MatmulOp::verify() {
   RankedTensorType lhsTy = getLhs().getType();
@@ -42,16 +37,11 @@ LogicalResult MatmulOp::verify() {
                          << " but rhs has K=" << kRhs;
 
   if (resTy.getDimSize(0) != m || resTy.getDimSize(1) != n)
-    return emitOpError() << "result shape must be " << m << "x" << n
-                         << ", got " << resTy.getDimSize(0) << "x"
-                         << resTy.getDimSize(1);
+    return emitOpError() << "result shape must be " << m << "x" << n << ", got "
+                         << resTy.getDimSize(0) << "x" << resTy.getDimSize(1);
 
   return success();
 }
-
-//===----------------------------------------------------------------------===//
-// Conv2DOp
-//===----------------------------------------------------------------------===//
 
 LogicalResult Conv2DOp::verify() {
   RankedTensorType inTy = getInput().getType();
@@ -63,16 +53,18 @@ LogicalResult Conv2DOp::verify() {
 
   if (strides.size() != 2)
     return emitOpError() << "expected 2 strides, got " << strides.size();
+
   if (dilations.size() != 2)
     return emitOpError() << "expected 2 dilations, got " << dilations.size();
+
   for (int64_t s : strides)
     if (s < 1)
       return emitOpError() << "strides must be >= 1, got " << s;
+
   for (int64_t d : dilations)
     if (d < 1)
       return emitOpError() << "dilations must be >= 1, got " << d;
 
-  // input NHWC, filter HWCF
   const int64_t n = inTy.getDimSize(0);
   const int64_t h = inTy.getDimSize(1);
   const int64_t w = inTy.getDimSize(2);
@@ -88,15 +80,14 @@ LogicalResult Conv2DOp::verify() {
 
   const int64_t effKH = (kh - 1) * dilations[0] + 1;
   const int64_t effKW = (kw - 1) * dilations[1] + 1;
+
   if (effKH > h || effKW > w)
     return emitOpError() << "dilated filter " << effKH << "x" << effKW
                          << " does not fit in input spatial extent " << h << "x"
                          << w;
 
-  const int64_t oh =
-      computeConv2DOutputDim(h, kh, strides[0], dilations[0]);
-  const int64_t ow =
-      computeConv2DOutputDim(w, kw, strides[1], dilations[1]);
+  const int64_t oh = computeConv2DOutputDim(h, kh, strides[0], dilations[0]);
+  const int64_t ow = computeConv2DOutputDim(w, kw, strides[1], dilations[1]);
 
   if (resTy.getDimSize(0) != n || resTy.getDimSize(1) != oh ||
       resTy.getDimSize(2) != ow || resTy.getDimSize(3) != f)
@@ -105,10 +96,6 @@ LogicalResult Conv2DOp::verify() {
 
   return success();
 }
-
-//===----------------------------------------------------------------------===//
-// QMatmulOp
-//===----------------------------------------------------------------------===//
 
 LogicalResult QMatmulOp::verify() {
   RankedTensorType lhsTy = getLhs().getType();
@@ -122,31 +109,32 @@ LogicalResult QMatmulOp::verify() {
   if (rhsTy.getDimSize(0) != k)
     return emitOpError() << "contraction dimension mismatch: lhs has K=" << k
                          << " but rhs has K=" << rhsTy.getDimSize(0);
+
   if (resTy.getDimSize(0) != m || resTy.getDimSize(1) != n)
-    return emitOpError() << "result shape must be " << m << "x" << n
-                         << ", got " << resTy.getDimSize(0) << "x"
-                         << resTy.getDimSize(1);
+    return emitOpError() << "result shape must be " << m << "x" << n << ", got "
+                         << resTy.getDimSize(0) << "x" << resTy.getDimSize(1);
 
-  // |x - zp| <= 255 for i8 x and zp, so each product is at most 255^2.
-  constexpr int64_t kMaxK = ((int64_t{1} << 31) - 1) / (255 * 255);
-  if (k > kMaxK)
+  if (k > kMaxQuantK)
     return emitOpError() << "K=" << k << " can overflow the i32 accumulator"
-                         << " (at most " << kMaxK << ")";
+                         << " (at most " << kMaxQuantK << ")";
 
-  // I32Attr accessors return uint32_t; compare as the signed values they are.
   auto sgn = [](uint32_t v) { return static_cast<int32_t>(v); };
+
   for (auto [name, zp] :
        {std::pair<StringRef, int32_t>{"lhs_zp", sgn(getLhsZp())},
         {"rhs_zp", sgn(getRhsZp())},
         {"out_zp", sgn(getOutZp())}})
-    if (zp < -128 || zp > 127)
-      return emitOpError() << name << " must be in [-128, 127], got " << zp;
+    if (zp < kInt8Min || zp > kInt8Max)
+      return emitOpError() << name << " must be in [" << kInt8Min << ", "
+                           << kInt8Max << "], got " << zp;
 
-  if (sgn(getMultiplier()) < (int32_t{1} << 30))
+  if (sgn(getMultiplier()) < kMinQuantMultiplier)
     return emitOpError() << "multiplier must be normalized to [2^30, 2^31), "
                          << "got " << sgn(getMultiplier());
-  if (sgn(getShift()) < 0 || sgn(getShift()) > 31)
-    return emitOpError() << "shift must be in [0, 31], got " << sgn(getShift());
+
+  if (sgn(getShift()) < 0 || sgn(getShift()) > kMaxQuantShift)
+    return emitOpError() << "shift must be in [0, " << kMaxQuantShift
+                         << "], got " << sgn(getShift());
 
   return success();
 }

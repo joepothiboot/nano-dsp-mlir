@@ -1,23 +1,4 @@
 #!/bin/bash
-# Stage 5 benchmark: the dsp kernels in benchmarks/kernels.mlir compiled by
-# nanodsp-opt (untiled, and with the host-neon TargetModel schedule) against
-# the scalar C++ reference, plus measured roofline ceilings.
-#
-#   scripts/bench.sh --check   build everything, check every kernel against
-#                              reference/nanodsp_ref.h, no timing (CI)
-#   scripts/bench.sh           check, then time; writes build/bench/results.json
-#
-# Environment:
-#   NANODSP_OPT   nanodsp-opt to use (default build/bin/nanodsp-opt; ./test.sh)
-#   LLVM_BIN      mlir-translate, llc, clang++ (default: Homebrew LLVM)
-#   BENCH_ARGS    extra harness arguments, e.g. "--samples 20 --filter matmul"
-#   BENCH_IR_OPT  LLVM IR optimization of the kernels before llc (default
-#                 -O3, as clang -O3 gives the C++ reference); "none" skips it
-#   BENCH_CPU     -mcpu for llc and clang++ (default native)
-#
-# Every configuration compiles the same kernels file with its functions
-# renamed `<name>_<config>` (a sed over the func.func names), so all
-# configurations link into one harness binary without symbol clashes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -48,8 +29,6 @@ if [[ ! -x "${NANODSP_OPT}" ]]; then
   exit 1
 fi
 
-# Homebrew clang does not find the macOS SDK on its own; the kernel objects
-# get the SDK's macOS version so the linker does not warn about a mismatch.
 SYSROOT=()
 LLC_TRIPLE=()
 if [[ "$(uname)" == Darwin ]]; then
@@ -60,19 +39,14 @@ CXXFLAGS=(-std=c++20 -O3 -mcpu="${CPU}" -ffp-contract=off -Wall -Wextra)
 
 mkdir -p "${OUT}"
 
-# kernel_object <config> <nanodsp-opt schedule pass, or "">
 kernel_object() {
   local cfg=$1 sched=$2
   sed -E "s/func\.func @([A-Za-z0-9_]+)\(/func.func @\1_${cfg}(/" "${KERNELS}" \
     > "${OUT}/kernels-${cfg}.mlir"
-  # shellcheck disable=SC2086  # $sched is empty or one pass
+  # shellcheck disable=SC2086
   "${NANODSP_OPT}" "${OUT}/kernels-${cfg}.mlir" -convert-dsp-to-linalg ${sched} \
       -nanodsp-lower-to-llvm \
     | "${LLVM_BIN}/mlir-translate" --mlir-to-llvmir -o "${OUT}/kernels-${cfg}.ll"
-  # llc alone runs no IR-level passes: without opt, every scalar `+=` goes
-  # through memory (no promotion of the accumulator), which is not what
-  # clang -O3 does to the reference. opt adds no fast-math flags, so it can
-  # neither reassociate nor contract; the harness checks that anyway.
   local ll="${OUT}/kernels-${cfg}.ll"
   if [[ "${IR_OPT}" != none ]]; then
     "${LLVM_BIN}/opt" "${IR_OPT}" "${LLC_TRIPLE[@]}" -mcpu="${CPU}" \
@@ -87,8 +61,6 @@ echo "== compiling kernels (${NANODSP_OPT})"
 kernel_object untiled ""
 kernel_object scheduled -nanodsp-optimize=target=host-neon
 
-# The bit-exactness argument (docs/05-soundness.md) needs separate fmul and
-# fadd; fail early if llc fused anything.
 if "${LLVM_BIN}/llvm-objdump" -d "${OUT}"/kernels-*.o | grep -qE '\bfml[as]\b|\bfn?madd\b|\bfn?msub\b'; then
   echo "error: FMA instructions in the kernel objects" >&2
   exit 1
@@ -112,11 +84,10 @@ echo "== ceilings"
 "${OUT}/ceilings" --json "${OUT}/ceilings.json"
 
 echo "== kernels"
-# shellcheck disable=SC2086  # BENCH_ARGS is a word list
+# shellcheck disable=SC2086
 "${OUT}/harness" --json "${OUT}/benchmarks.json" ${BENCH_ARGS:-}
 
-# --- context ---------------------------------------------------------------
-json_str() { # escape for a JSON string
+json_str() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n'
 }
 first_line() { "$@" 2>/dev/null | head -n 1; }

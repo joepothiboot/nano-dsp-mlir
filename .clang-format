@@ -1,0 +1,4 @@
+BasedOnStyle: LLVM
+FixNamespaceComments: false
+SeparateDefinitionBlocks: Always
+MaxEmptyLinesToKeep: 1
