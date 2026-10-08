@@ -90,23 +90,15 @@ before it times anything. Any mismatch prints the first bad index and exits
 non-zero, and nothing is timed.
 
 - **`matmul`, `qmatmul`**: bit-exact, for both MLIR configurations.
-- **`conv2d`, untiled**: bit-exact.
-- **`conv2d`, scheduled**: **not** bit-exact at these shapes. The `host-neon`
-  cache tile blocks the input-channel dim (by 16 for 64 channels, by 8 for
-  128). That block loop lands outside the `kh`/`kw` loops, so each output sums
-  the same products in the order `c0 → kh → kw → c` instead of `kh → kw → c`.
-  A C++ loop nest in exactly that order reproduces the scheduled output bit
-  for bit. `docs/05-soundness.md` argues that blocking a reduction dim keeps
-  the order, which holds for one reduction dim (matmul) but not for several.
-  The integration test's convs are too small to get a channel block.
+- **`conv2d`**: bit-exact, for both MLIR configurations.
 
-  The harness therefore accepts scheduled `conv2d` within a reordering bound:
-  any two summation orders of the same `n` products differ by at most
-  `2·γₙ·Σ|x·w|` per output, with `γₙ = n·u / (1 − n·u)`, `u = 2⁻²⁴`
-  (Higham, _Accuracy and Stability of Numerical Algorithms_, sec. 3.1). With
-  `n = 9·C`, the observed differences use under 1% of it. A dropped or wrong
-  product would exceed it. The `checked` field of each result says which test
-  passed.
+The harness still accepts a result within a reordering bound if it is not
+bit-identical: any two summation orders of the same `n` products differ by at
+most `2·γₙ·Σ|x·w|` per output, with `γₙ = n·u / (1 − n·u)`, `u = 2⁻²⁴`
+(Higham, _Accuracy and Stability of Numerical Algorithms_, sec. 3.1). A
+dropped or wrong product would exceed it. The `checked` field of each result
+says which test passed. Scheduled `conv2d` used to need it, when the cache tile
+blocked the channel dim; see `docs/05-soundness.md`.
 
 ## ⏱️ Timing method
 

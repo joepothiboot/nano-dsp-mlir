@@ -133,6 +133,22 @@ func.func @main() {
   call @print4(%c2d) : (tensor<?x?x?x?xf32>) -> ()
   call @print4(%c3d) : (tensor<?x?x?x?xf32>) -> ()
 
+  %inw = tensor.generate {
+  ^bb0(%n: index, %h: index, %w: index, %c: index):
+    %v = func.call @fill4(%n, %h, %w, %c) : (index, index, index, index) -> f32
+    tensor.yield %v : f32
+  } : tensor<1x5x5x64xf32>
+  
+  %fw = tensor.generate {
+  ^bb0(%h: index, %w: index, %c: index, %o: index):
+    %v = func.call @fill4(%o, %c, %h, %w) : (index, index, index, index) -> f32
+    tensor.yield %v : f32
+  } : tensor<3x3x64x64xf32>
+
+  %c4 = dsp.conv2d %inw, %fw : (tensor<1x5x5x64xf32>, tensor<3x3x64x64xf32>) -> tensor<1x3x3x64xf32>
+  %c4d = tensor.cast %c4 : tensor<1x3x3x64xf32> to tensor<?x?x?x?xf32>
+  call @print4(%c4d) : (tensor<?x?x?x?xf32>) -> ()
+
   %s = tensor.extract_slice %a[0, 0] [6, 20] [1, 1] : tensor<64x96xf32> to tensor<6x20xf32>
   %t = tensor.extract_slice %a[6, 3] [6, 20] [1, 1] : tensor<64x96xf32> to tensor<6x20xf32>
   %sum = dsp.add %s, %t : tensor<6x20xf32>

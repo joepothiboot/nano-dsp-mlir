@@ -15,7 +15,12 @@ what order** they happen. Each schedule step leaves both alone:
    to each other, not how any single one is computed.
 2. **Tiling the reduction dim into cache blocks** splits `for k in 0..K` into
    `for k0 in 0..K step kc: for k in k0..k0+kc`. Same sequence of `k`, same
-   order.
+   order. With more than one reduction dim (conv2d's `kh`, `kw`, `c`) this
+   only holds if no outer reduction loop wraps an inner one that is still
+   split: blocking `c` while `kh`/`kw` stay whole walks `c0 → kh → kw → c`,
+   a different order. `TileSizeModel` therefore only grows a reduction dim's
+   cache tile when every later reduction dim is already whole or every
+   earlier one is 1.
 3. **Register tiles have reduction size 1.** Each vector step adds exactly one
    product per output element, so accumulation stays
    `((0 + a₀b₀) + a₁b₁) + …` in increasing `k`, just like the naive loop nest

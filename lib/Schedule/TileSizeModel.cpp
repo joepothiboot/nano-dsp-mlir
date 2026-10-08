@@ -104,6 +104,17 @@ static std::pair<int64_t, int64_t> chooseRegisterShape(unsigned numRegs,
   return {bestMr, bestNv};
 }
 
+static bool keepsReductionOrder(ArrayRef<unsigned> reductionDims,
+                                ArrayRef<int64_t> tile,
+                                ArrayRef<int64_t> ranges) {
+  for (auto [i, a] : llvm::enumerate(reductionDims))
+    for (unsigned b : reductionDims.drop_front(i + 1))
+      if (tile[a] != 1 && tile[b] != ranges[b])
+        return false;
+
+  return true;
+}
+
 FailureOr<TileSizes>
 mlir::nanodsp::computeTileSizes(linalg::LinalgOp op,
                                 const TargetModel &target) {
@@ -192,6 +203,9 @@ mlir::nanodsp::computeTileSizes(linalg::LinalgOp op,
       candidate[d] = next;
 
       if (computeWorkingSetBytes(op, candidate) > budget)
+        continue;
+
+      if (!keepsReductionOrder(reductionDims, candidate, sizes.loopRanges))
         continue;
 
       sizes.cache = std::move(candidate);

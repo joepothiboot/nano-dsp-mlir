@@ -17,8 +17,10 @@ completed tile-size sweep.
 - The C++ harness checks MLIR outputs against its scalar reference before
   timing. Mojo's correctness is checked by `pixi run test-mojo` separately;
   the Mojo benchmark itself does not verify each timed output.
-- Scheduled conv2d is accepted only within the documented floating-point
-  reduction-reordering bound; it is not bit-exact at these shapes.
+- The numbers below were taken before the cache tile stopped blocking
+  `conv2d` channels (see [`05-soundness.md`](05-soundness.md)). That schedule
+  was only within the reordering bound; the current one is bit-exact, and its
+  timings have not been re-measured.
 
 ## Results
 
@@ -65,8 +67,6 @@ general ranking.
   does not set an explicit QoS class. macOS offers no hard CPU affinity, so
   this is a remaining scheduling difference.
 - These are call timings, not a complete model or application pipeline.
-- Scheduled conv2d changes reduction order. Its measured outputs fit the
-  documented error bound but are not bit-exact.
 - No GPU is involved. These results are for the Apple M2 CPU's NEON path;
   GPU measurements are in [`06-gpu-results.md`](06-gpu-results.md).
 
