@@ -13,8 +13,8 @@ not hardcoded. They come from a small analytical model
 | `host-neon` | 128 bit      | 32          | 128 KiB L1D (Apple M-series) | 64 KiB       |
 | `x86-avx2`  | 256 bit      | 16          | 32 KiB L1D                   | 16 KiB       |
 
-`cacheFraction = 0.5` is a starting estimate that hasn't been measured yet.
-Validating it is the job of the Stage 5 sweep.
+`cacheFraction = 0.5` is a starting estimate. The matmul sweep below tests it
+on `host-neon` only.
 
 ## 🧮 Register tile
 
@@ -76,6 +76,28 @@ awkward extents lose blocking:
 Masked vectorization (`vector_sizes` on `transform.structured.vectorize`) or
 peeling would remove this restriction. It's the first thing to try when a
 benchmark shows a shape that suffers from it.
+
+## 🔬 Sweep: cache tile of matmul 512³ on Apple M2
+
+`scripts/sweep.sh` compiles `matmul` 512³ with 48 hand-set cache tiles
+(`m ∈ {16, 64, 256}`, `n ∈ {16, 64, 128, 512}`, `k ∈ {8, 32, 128, 512}`) and
+the model's register tile 4×16×1, then times each one with
+`benchmarks/sweep.cpp`. Every tile is checked bit for bit against a scalar
+loop nest. Raw numbers: `benchmarks/results/sweep-m2-matmul512.csv`
+(one run, 10 samples per tile, best time).
+
+- **The surface is flat.** All 48 tiles land between 29.2 and 36.3 GFLOP/s.
+  The model's pick (64, 128, 32; 56 KiB, 0.44 of L1D) reaches 34.5, within 5%
+  of the best tile (36.3).
+- **`k` matters most.** `k = 8` and `k = 32` reach 31–36 GFLOP/s, `k ≥ 128`
+  only 29–31. Long `k` blocks lose about 12%, not gain: the 16 MiB L2 holds a
+  whole operand, so blocking for L1 saves little traffic.
+- **The working-set budget is not what separates tiles.** Tiles at 7× L1D
+  (`256, 512, 8`) run as fast as ones at 0.05× (`16, 64, 8`). Raising or
+  lowering `cacheFraction` would barely change this shape.
+- **Limits.** One shape, one machine, single runs of about 1% noise. This says
+  the model is not wrong for matmul 512³ on an M2; it does not show the budget
+  is right, and `x86-avx2` and the conv2d tiles are untested.
 
 ## 🔗 Where the numbers go
 

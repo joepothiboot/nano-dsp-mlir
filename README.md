@@ -44,7 +44,8 @@ Supported targets: `host-neon`, `x86-avx2`, `hexagon-hvx128`.
 | Benchmark harness, MLIR vs Mojo vs C++                | First measurements on Apple M2                            |
 | Mojo CPU kernels and C++ reference                    | Done (Mojo 1.1)                                           |
 | Mojo GPU kernels (matmul in 3 variants, conv2d)       | Bit-exact on Apple M2 and NVIDIA T4, compared with cuBLAS |
-| Python DSL front end, tile-size sweep                 | Not started                                               |
+| Tile-size sweep                                       | matmul 512³ on M2 only; see docs/02-tiling-model.md       |
+| Python DSL front end                                  | Not started                                               |
 
 GPU results: on an NVIDIA T4 the register-blocked matmul reaches 1.9 TFLOP/s,
 49–58% of cuBLAS from 512³ up. On an Apple M2 GPU it reaches 549 GFLOP/s at
