@@ -18,3 +18,4 @@ test-reference = { cmd = "mkdir -p build && c++ -std=c++20 -O2 -ffp-contract=off
 test-mlir = "./test.sh"
 bench-check = "scripts/bench.sh --check"
 bench-mlir = "scripts/bench.sh"
+bench-t4 = "bash scripts/run-t4.sh"

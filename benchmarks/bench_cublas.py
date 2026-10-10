@@ -3,7 +3,6 @@ import json
 import os
 import time
 
-import cupy as cp
 import numpy as np
 
 SAMPLES = 10
@@ -15,6 +14,16 @@ def inexact(shape, seed):
     v = ((i + seed) * 2654435761) % 1000003
 
     return (v.astype(np.float32) / np.float32(997.0) - np.float32(500.0)).reshape(shape)
+
+
+def bound_used(a, b, c):
+    k = a.shape[1]
+    exact = a.astype(np.float64) @ b.astype(np.float64)
+    u = 2.0**-24
+    gamma = k * u / (1 - k * u)
+    bound = gamma * (np.abs(a).astype(np.float64) @ np.abs(b).astype(np.float64))
+
+    return float(np.max(np.abs(c - exact) / bound))
 
 
 def time_samples(run):
@@ -46,6 +55,8 @@ def time_samples(run):
 
 
 def main():
+    import cupy as cp
+
     assert os.environ.get("CUPY_TF32", "0") == "0", "unset CUPY_TF32: TF32 is not an f32 baseline"
     device = cp.cuda.runtime.getDeviceProperties(0)["name"].decode()
     rows = []
@@ -54,11 +65,7 @@ def main():
         a, b = inexact((n, n), 1), inexact((n, n), 2)
         da, db = cp.asarray(a), cp.asarray(b)
         c = cp.matmul(da, db).get()
-        exact = a.astype(np.float64) @ b.astype(np.float64)
-        u = 2.0**-24
-        gamma = n * u / (1 - n * u)
-        bound = gamma * (np.abs(a).astype(np.float64) @ np.abs(b).astype(np.float64))
-        used = float(np.max(np.abs(c - exact) / bound))
+        used = bound_used(a, b, c)
 
         if used > 1:
             raise SystemExit(f"cuBLAS {n}: outside the reordering bound ({used:.2f})")

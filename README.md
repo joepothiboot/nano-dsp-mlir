@@ -44,12 +44,19 @@ Supported targets: `host-neon`, `x86-avx2`, `hexagon-hvx128`.
 | Benchmark harness, MLIR vs Mojo vs C++                | First measurements on Apple M2                            |
 | Mojo CPU kernels and C++ reference                    | Done (Mojo 1.1)                                           |
 | Mojo GPU kernels (matmul in 3 variants, conv2d)       | Bit-exact on Apple M2 and NVIDIA T4, compared with cuBLAS |
+| CUDA and Triton matmul                                | CUDA bit-exact on NVIDIA T4; vs Mojo, Triton and cuBLAS   |
 | Tile-size sweep                                       | matmul 512³ on M2 only; see docs/02-tiling-model.md       |
 | Python DSL front end                                  | Not started                                               |
 
 GPU results: on an NVIDIA T4 the register-blocked matmul reaches 1.9 TFLOP/s,
 49–58% of cuBLAS from 512³ up. On an Apple M2 GPU it reaches 549 GFLOP/s at
 2048³. Details in [docs/06-gpu-results.md](docs/06-gpu-results.md).
+
+CUDA and Triton: on the same T4, in one session, a bit-exact CUDA kernel with
+128×128 tiles and `float4` loads reaches 2.6 TFLOP/s at 2048³, 68% of cuBLAS;
+autotuned Triton matches cuBLAS there but is not bit-exact. Nsight Compute
+counters explain the gap. Details in
+[docs/07-cuda-triton.md](docs/07-cuda-triton.md).
 
 ## Building
 
@@ -105,6 +112,7 @@ pixi run bench            # Mojo CPU benchmarks
 pixi run bench-gpu        # GPU benchmarks, writes build/bench/results-gpu.json
 pixi run bench-check      # MLIR kernels vs the C++ reference, no timing
 pixi run bench-mlir       # MLIR vs C++ benchmark
+pixi run bench-t4         # CUDA, Triton, Mojo and ncu on a T4 (needs nvcc; see docs/07)
 ```
 
 Kernels keep the reduction order of the naive loop nest and keep multiply and
@@ -133,6 +141,7 @@ test/                    lit tests (Dialect, Conversion, Schedule, Integration, 
 schedules/               hand-written Transform-dialect schedules
 mojo/nanodsp/            Mojo package (CPU kernels, layout API, GPU kernels)
 mojo/tests/              Mojo tests
+cuda/, triton/           CUDA and Triton matmuls with their benchmark harness
 reference/               header-only scalar C++ reference
 benchmarks/              benchmark harnesses and results
 docker/hexagon/          Hexagon toolchain and QEMU image
@@ -147,6 +156,7 @@ docs/                    design notes
 - [docs/04-schedule-ir-diff.md](docs/04-schedule-ir-diff.md): IR before and after scheduling
 - [docs/05-soundness.md](docs/05-soundness.md): why the schedules preserve results
 - [docs/06-gpu-results.md](docs/06-gpu-results.md): GPU measurements, M2 and T4 vs cuBLAS
+- [docs/07-cuda-triton.md](docs/07-cuda-triton.md): CUDA and Triton vs Mojo and cuBLAS on a T4, with Nsight Compute
 - [docs/mojo-kernels.md](docs/mojo-kernels.md), [docs/mojo-api-design.md](docs/mojo-api-design.md), [docs/mojo-gpu.md](docs/mojo-gpu.md): Mojo library design
 - [docs/quantization.md](docs/quantization.md): `dsp.qmatmul` semantics and rounding
 - [docs/hexagon-target.md](docs/hexagon-target.md), [docs/scratchpad-dma.md](docs/scratchpad-dma.md): Hexagon target and local memory

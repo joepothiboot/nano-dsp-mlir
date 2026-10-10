@@ -38,6 +38,11 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
 - `mojo/tests/` — golden (same values as `test/Integration/`) and
   differential (SIMD vs naive loop nest) tests
 - `reference/` — header-only scalar C++ oracle + golden-value test
+- `cuda/` — CUDA matmuls (naive, tiled, blocked, vec) and the T4 harness
+  (`bench.cu`, cuBLAS in the same harness); `triton/matmul.py` — Triton
+  matmul; `scripts/run-t4.sh` runs both plus Mojo and `ncu` on Colab (see
+  `docs/07-cuda-triton.md`). CUDA kernels stay bit-exact via
+  `__fmul_rn`/`__fadd_rn`; constants in `cuda/constants.h`
 - `docker/hexagon/`, `scripts/run-hexagon.sh`, `test/Hexagon/` — emulated Hexagon V68
   (HVX) run of the kernels, bit-checked against `reference/`; needs Docker and
   is not part of `check-nanodsp` (see `docs/hexagon-target.md`)
