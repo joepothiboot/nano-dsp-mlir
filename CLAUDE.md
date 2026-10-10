@@ -41,7 +41,8 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
 - `docker/hexagon/`, `scripts/run-hexagon.sh`, `test/Hexagon/` — emulated Hexagon V68
   (HVX) run of the kernels, bit-checked against `reference/`; needs Docker and
   is not part of `check-nanodsp` (see `docs/hexagon-target.md`)
-- `benchmarks/` — Mojo kernel throughput; MLIR/C++ comparison planned
+- `benchmarks/` — Mojo, MLIR and C++ benchmarks, ceilings, raw results in
+  `benchmarks/results/` (see `docs/03-results.md`, `docs/06-gpu-results.md`)
 - `docs/` — design notes (the README index says which exist)
 
 ## Build & test
@@ -80,8 +81,6 @@ pixi run bench-gpu       # GPU benchmark -> build/bench/results-gpu.json
   1 and vectorize to separate `mulf`/`addf` (no `vector.contract`, no FMA).
   Any schedule change must keep `test/Integration/Schedule/bit-exact.mlir`
   passing. Tile sizes divide loop extents (no masking yet).
-- The Stage 5 MLIR-vs-Mojo-vs-C++ benchmark comparison is planned. Some
-  `docs/` files in the README index are planned, not present.
 - Mojo is pinned to 1.1 in `pixi.toml`: `def` only (no `fn`), `comptime` not
   `alias`, stdlib imports as `std.*`, struct parameters as `Self.dtype`, and
   `unsafe_load`/`unsafe_store`/`unsafe_offset` on pointers. Keep builds free of

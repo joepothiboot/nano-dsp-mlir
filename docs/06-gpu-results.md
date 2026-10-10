@@ -43,12 +43,12 @@ cuBLAS as the T4 baseline. Every Mojo row on both GPUs is bit-exact.
 
 | op and shape           | C++ reference | MLIR scheduled |  Mojo CPU, best |    Mojo GPU, best |
 | ---------------------- | ------------: | -------------: | --------------: | ----------------: |
-| matmul 512³            |     109.06 ms |        7.99 ms | 5.75 ms (tiled) | 0.89 ms (blocked) |
-| conv2d 56×56×64 → 64   |      89.29 ms |       10.76 ms |        14.84 ms |           3.68 ms |
-| conv2d 28×28×128 → 128 |      87.85 ms |       25.62 ms |        13.11 ms |           3.22 ms |
+| matmul 512³            |     105.20 ms |        7.59 ms | 5.65 ms (tiled) | 0.89 ms (blocked) |
+| conv2d 56×56×64 → 64   |      86.77 ms |        8.81 ms |        14.69 ms |           3.68 ms |
+| conv2d 28×28×128 → 128 |      84.32 ms |        5.52 ms |        12.75 ms |           3.22 ms |
 
-All medians; all bit-exact against the reference except scheduled MLIR
-conv2d, which is within the reordering bound (`03-results.md`).
+All medians; all bit-exact against the reference. CPU columns are from the
+2026-10-10 run in `03-results.md`; the GPU column is from the earlier GPU run.
 
 ### What bit-exactness costs here
 

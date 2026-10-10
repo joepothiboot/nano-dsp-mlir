@@ -1,0 +1,11 @@
+matmul-alloc   64x64x64    29.1435546875  us min /  29.346435546875  us median ±  0.14838023726445307  us sd   17.98984391649633   GFLOP/s
+matmul-alloc   128x128x128    208.21484375  us min /  208.873046875  us median ±  0.668613008627554  us sd   20.144116166069452   GFLOP/s
+matmul-alloc   256x256x256    1601.25  us min /  1618.96875  us median ±  66.6684296641888  us sd   20.955148790007808   GFLOP/s
+matmul-alloc   512x512x512    14396.25  us min /  14504.25  us median ±  894.5352517741638  us sd   18.646206894156464   GFLOP/s
+tiled-alloc 4x16   256x256x256    710.984375  us min /  715.73046875  us median ±  3.37439361273833  us sd   47.19433109904841   GFLOP/s
+tiled-reuse 4x16   256x256x256    708.8046875  us min /  710.79296875  us median ±  4.12148855237641  us sd   47.339461196777144   GFLOP/s
+tiled-alloc 4x16   512x512x512    5630.8125  us min /  5652.71875  us median ±  25.246475964203622  us sd   47.67259716071171   GFLOP/s
+tiled-reuse 4x16   512x512x512    5630.625  us min /  5651.6875  us median ±  22.21528580980022  us sd   47.67418465978466   GFLOP/s
+conv2d-alloc   56x56x64->64    14568.75  us min /  14689.625  us median ±  78.5893378759344  us sd   14.756986563706564   GFLOP/s
+conv2d-alloc   28x28x128->128    12673.0  us min /  12750.625  us median ±  91.01964455239563  us sd   15.731122228359505   GFLOP/s
+qmatmul-alloc   256x256x256    1832.65625  us min /  1842.125  us median ±  8.820849693930663  us sd   18.309179367379997   GOP/s
