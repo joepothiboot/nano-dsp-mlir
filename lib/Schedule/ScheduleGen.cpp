@@ -76,7 +76,8 @@ std::string mlir::nanodsp::buildDefaultSchedule(ArrayRef<linalg::GenericOp> ops,
       continue;
     }
 
-    SmallVector<int64_t> cacheSizes, regSizes;
+    SmallVector<int64_t> cacheSizes;
+    SmallVector<int64_t> regSizes;
 
     for (auto [range, cache, reg] :
          llvm::zip_equal(sizes->loopRanges, sizes->cache, sizes->reg)) {

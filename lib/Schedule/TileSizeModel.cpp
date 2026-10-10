@@ -19,7 +19,8 @@ static unsigned elementBytes(Type type) {
 
 uint64_t mlir::nanodsp::computeWorkingSetBytes(linalg::LinalgOp op,
                                                ArrayRef<int64_t> tile) {
-  SmallVector<int64_t> zero(tile.size(), 0), last;
+  SmallVector<int64_t> zero(tile.size(), 0);
+  SmallVector<int64_t> last;
 
   for (int64_t t : tile)
     last.push_back(t - 1);
@@ -28,7 +29,8 @@ uint64_t mlir::nanodsp::computeWorkingSetBytes(linalg::LinalgOp op,
 
   for (OpOperand &operand : op->getOpOperands()) {
     AffineMap map = op.getMatchingIndexingMap(&operand);
-    SmallVector<int64_t> lo = map.compose(zero), hi = map.compose(last);
+    SmallVector<int64_t> lo = map.compose(zero);
+    SmallVector<int64_t> hi = map.compose(last);
     uint64_t elems = 1;
 
     for (auto [l, h] : llvm::zip_equal(lo, hi))
@@ -42,11 +44,13 @@ uint64_t mlir::nanodsp::computeWorkingSetBytes(linalg::LinalgOp op,
 
 static bool hasNonUnitStride(linalg::LinalgOp op, unsigned d) {
   unsigned numLoops = op.getNumLoops();
-  SmallVector<int64_t> zero(numLoops, 0), unit(numLoops, 0);
+  SmallVector<int64_t> zero(numLoops, 0);
+  SmallVector<int64_t> unit(numLoops, 0);
   unit[d] = 1;
 
   for (AffineMap map : op.getIndexingMapsArray()) {
-    SmallVector<int64_t> at0 = map.compose(zero), at1 = map.compose(unit);
+    SmallVector<int64_t> at0 = map.compose(zero);
+    SmallVector<int64_t> at1 = map.compose(unit);
 
     for (auto [a, b] : llvm::zip_equal(at0, at1))
       if (b - a > 1)
@@ -83,15 +87,17 @@ static std::pair<int64_t, int64_t> chooseRegisterShape(unsigned numRegs,
   if (!hasReduction)
     return {1, 4};
 
-  int64_t bestMr = 1, bestNv = 1;
+  int64_t bestMr = 1;
+  int64_t bestNv = 1;
   double bestIntensity = 0.0;
 
   for (int64_t nv = 1; nv <= kMaxRegisterVectors; ++nv) {
     for (int64_t mr = 1; mr <= kMaxRegisterRows; ++mr) {
-      if (mr * nv + nv + 1 > static_cast<int64_t>(numRegs))
+      if ((mr * nv) + nv + 1 > static_cast<int64_t>(numRegs))
         break;
 
-      double intensity = double(mr * nv) / double(mr + nv);
+      double intensity =
+          static_cast<double>(mr * nv) / static_cast<double>(mr + nv);
 
       if (intensity > bestIntensity) {
         bestIntensity = intensity;

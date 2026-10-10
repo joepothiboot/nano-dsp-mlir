@@ -14,8 +14,7 @@
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Pass/Pass.h"
 
-namespace mlir {
-namespace nanodsp {
+namespace mlir::nanodsp {
 
 #define GEN_PASS_DECL
 #include "nanodsp/Schedule/Passes.h.inc"
@@ -25,7 +24,6 @@ namespace nanodsp {
 
 void registerNanoDSPPipelines();
 
-}
 }
 
 #endif

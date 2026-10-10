@@ -6,15 +6,13 @@
 
 #include <memory>
 
-namespace mlir {
-namespace nanodsp {
+namespace mlir::nanodsp {
 
 void populateDSPToLinalgPatterns(RewritePatternSet &patterns);
 
 #define GEN_PASS_DECL_CONVERTDSPTOLINALG
 #include "nanodsp/Conversion/Passes.h.inc"
 
-}
 }
 
 #endif

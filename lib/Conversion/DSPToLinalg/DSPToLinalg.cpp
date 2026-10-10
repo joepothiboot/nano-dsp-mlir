@@ -12,11 +12,9 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Transforms/DialectConversion.h"
 
-namespace mlir {
-namespace nanodsp {
+namespace mlir::nanodsp {
 #define GEN_PASS_DEF_CONVERTDSPTOLINALG
 #include "nanodsp/Conversion/Passes.h.inc"
-}
 }
 
 using namespace mlir;
@@ -112,7 +110,9 @@ struct MatmulOpLowering : public OpConversionPattern<MatmulOp> {
 
     Value dest = createZeroDest(rewriter, loc, resTy);
 
-    AffineExpr m, n, k;
+    AffineExpr m;
+    AffineExpr n;
+    AffineExpr k;
     bindDims(ctx, m, n, k);
     SmallVector<AffineMap> maps = {
         AffineMap::get(3, 0, {m, k}, ctx),
@@ -149,10 +149,11 @@ struct QMatmulOpLowering : public OpConversionPattern<QMatmulOp> {
     Location loc = op.getLoc();
     MLIRContext *ctx = rewriter.getContext();
     RankedTensorType resTy = op.getResult().getType();
-    Type i32 = rewriter.getI32Type(), i64 = rewriter.getI64Type();
+    Type i32 = rewriter.getI32Type();
+    Type i64 = rewriter.getI64Type();
     auto accTy = RankedTensorType::get(resTy.getShape(), i32);
 
-    auto constI32 = [&](int64_t v) -> Value {
+    auto constI32 = [&](int32_t v) -> Value {
       return arith::ConstantOp::create(rewriter, loc,
                                        rewriter.getI32IntegerAttr(v));
     };
@@ -162,12 +163,16 @@ struct QMatmulOpLowering : public OpConversionPattern<QMatmulOp> {
                                        rewriter.getI64IntegerAttr(v));
     };
 
-    auto sext = [](uint32_t v) { return int64_t(static_cast<int32_t>(v)); };
-    Value lhsZp = constI32(sext(op.getLhsZp()));
-    Value rhsZp = constI32(sext(op.getRhsZp()));
+    auto sext = [](uint32_t v) {
+      return static_cast<int64_t>(static_cast<int32_t>(v));
+    };
+    Value lhsZp = constI32(static_cast<int32_t>(op.getLhsZp()));
+    Value rhsZp = constI32(static_cast<int32_t>(op.getRhsZp()));
 
     Value accDest = createZeroDest(rewriter, loc, accTy);
-    AffineExpr m, n, k;
+    AffineExpr m;
+    AffineExpr n;
+    AffineExpr k;
     bindDims(ctx, m, n, k);
     SmallVector<AffineMap> accMaps = {
         AffineMap::get(3, 0, {m, k}, ctx),
@@ -196,7 +201,8 @@ struct QMatmulOpLowering : public OpConversionPattern<QMatmulOp> {
     Value round = constI64(int64_t{1} << (totalShift - 1));
     Value shift = constI64(totalShift);
     Value outZp = constI64(sext(op.getOutZp()));
-    Value lo = constI64(kInt8Min), hi = constI64(kInt8Max);
+    Value lo = constI64(kInt8Min);
+    Value hi = constI64(kInt8Max);
 
     Value outDest = createEmptyDest(rewriter, loc, resTy);
     AffineMap id = rewriter.getMultiDimIdentityMap(2);
@@ -236,7 +242,13 @@ struct Conv2DOpLowering : public OpConversionPattern<Conv2DOp> {
 
     Value dest = createZeroDest(rewriter, loc, resTy);
 
-    AffineExpr n, oh, ow, f, kh, kw, c;
+    AffineExpr n;
+    AffineExpr oh;
+    AffineExpr ow;
+    AffineExpr f;
+    AffineExpr kh;
+    AffineExpr kw;
+    AffineExpr c;
     bindDims(ctx, n, oh, ow, f, kh, kw, c);
 
     AffineExpr ih = oh * strides[0] + kh * dilations[0];

@@ -41,7 +41,7 @@ int main() {
   Tensor nan_in({1}, std::nanf(""));
   bool nan_ok = std::isnan(relu(nan_in).data[0]);
   std::printf("%s relu propagates NaN\n", nan_ok ? "PASS" : "FAIL");
-  failures += !nan_ok;
+  failures += static_cast<int>(!nan_ok);
 
   expect("matmul",
          matmul(Tensor({2, 3}, {1, 2, 3, 4, 5, 6}),
@@ -51,7 +51,7 @@ int main() {
   std::vector<float> ramp(16);
 
   for (int i = 0; i < 16; ++i)
-    ramp[i] = float(i + 1);
+    ramp[i] = static_cast<float>(i + 1);
 
   expect("conv2d",
          conv2d(Tensor({1, 4, 4, 1}, ramp), Tensor({3, 3, 1, 1}, 1.0f)),

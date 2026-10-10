@@ -8,8 +8,7 @@
 
 #include <string>
 
-namespace mlir {
-namespace nanodsp {
+namespace mlir::nanodsp {
 
 inline constexpr llvm::StringLiteral kScheduleTagAttr = "nanodsp.tag";
 
@@ -22,7 +21,6 @@ void stripScheduleTags(Operation *root);
 std::string buildDefaultSchedule(ArrayRef<linalg::GenericOp> ops,
                                  const TargetModel &target);
 
-}
 }
 
 #endif

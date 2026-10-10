@@ -11,12 +11,10 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 
-namespace mlir {
-namespace nanodsp {
+namespace mlir::nanodsp {
 #define GEN_PASS_DEF_NANODSPOPTIMIZE
 #define GEN_PASS_DEF_NANODSPEMITSCHEDULE
 #include "nanodsp/Schedule/Passes.h.inc"
-}
 }
 
 using namespace mlir;
@@ -91,8 +89,9 @@ void annotateTileSizes(ArrayRef<linalg::GenericOp> ops,
                 b.getDenseI64ArrayAttr(sizes->loopRanges));
     op->setAttr("nanodsp.cache_tile", b.getDenseI64ArrayAttr(sizes->cache));
     op->setAttr("nanodsp.reg_tile", b.getDenseI64ArrayAttr(sizes->reg));
-    op->setAttr("nanodsp.working_set_bytes",
-                b.getI64IntegerAttr(sizes->cacheWorkingSetBytes));
+    op->setAttr(
+        "nanodsp.working_set_bytes",
+        b.getI64IntegerAttr(static_cast<int64_t>(sizes->cacheWorkingSetBytes)));
   }
 }
 

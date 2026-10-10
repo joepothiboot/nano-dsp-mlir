@@ -59,7 +59,9 @@ inline Tensor matmul(const Tensor &a, const Tensor &b) {
   if (a.shape.size() != 2 || b.shape.size() != 2 || a.shape[1] != b.shape[0])
     throw std::invalid_argument("matmul: expected (MxK) * (KxN)");
 
-  const std::size_t m = a.shape[0], k = a.shape[1], n = b.shape[1];
+  const std::size_t m = a.shape[0];
+  const std::size_t k = a.shape[1];
+  const std::size_t n = b.shape[1];
   Tensor r({m, n});
 
   for (std::size_t i = 0; i < m; ++i)
@@ -80,9 +82,13 @@ inline Tensor conv2d(const Tensor &in, const Tensor &f, std::size_t sh = 1,
   if (in.shape.size() != 4 || f.shape.size() != 4 || in.shape[3] != f.shape[2])
     throw std::invalid_argument("conv2d: expected NHWC x HWCF");
 
-  const std::size_t nb = in.shape[0], h = in.shape[1], w = in.shape[2],
-                    c = in.shape[3];
-  const std::size_t kh = f.shape[0], kw = f.shape[1], nf = f.shape[3];
+  const std::size_t nb = in.shape[0];
+  const std::size_t h = in.shape[1];
+  const std::size_t w = in.shape[2];
+  const std::size_t c = in.shape[3];
+  const std::size_t kh = f.shape[0];
+  const std::size_t kw = f.shape[1];
+  const std::size_t nf = f.shape[3];
 
   if (h < (kh - 1) * dh + 1 || w < (kw - 1) * dw + 1)
     throw std::invalid_argument("conv2d: filter is larger than the input");
@@ -100,7 +106,8 @@ inline Tensor conv2d(const Tensor &in, const Tensor &f, std::size_t sh = 1,
           for (std::size_t ky = 0; ky < kh; ++ky)
             for (std::size_t kx = 0; kx < kw; ++kx)
               for (std::size_t ch = 0; ch < c; ++ch) {
-                const std::size_t iy = y * sh + ky * dh, ix = x * sw + kx * dw;
+                const std::size_t iy = y * sh + ky * dh;
+                const std::size_t ix = x * sw + kx * dw;
                 acc += in.data[((n * h + iy) * w + ix) * c + ch] *
                        f.data[((ky * kw + kx) * c + ch) * nf + fo];
               }
@@ -141,7 +148,9 @@ inline QTensor qmatmul(const QTensor &a, const QTensor &b,
   if (a.shape.size() != 2 || b.shape.size() != 2 || a.shape[1] != b.shape[0])
     throw std::invalid_argument("qmatmul: expected (MxK) * (KxN)");
 
-  const std::size_t m = a.shape[0], k = a.shape[1], n = b.shape[1];
+  const std::size_t m = a.shape[0];
+  const std::size_t k = a.shape[1];
+  const std::size_t n = b.shape[1];
   QTensor r({m, n}, std::vector<std::int8_t>(m * n));
 
   for (std::size_t i = 0; i < m; ++i)

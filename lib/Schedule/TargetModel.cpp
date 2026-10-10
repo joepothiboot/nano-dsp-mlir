@@ -3,14 +3,18 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/Support/LLVM.h"
 
+#include <array>
+
 using namespace mlir;
 using namespace mlir::nanodsp;
 
-static const TargetModel kTargets[] = {
-    {"host-neon", 128, 32, 128 * 1024, 0.5, 0},
-    {"x86-avx2", 256, 16, 32 * 1024, 0.5, 0},
-    {"hexagon-hvx128", 1024, 32, 512 * 1024, 0.5, 256 * 1024},
-};
+constexpr uint64_t kKiB = 1024;
+
+static const std::array<TargetModel, 3> kTargets = {{
+    {"host-neon", 128, 32, 128 * kKiB, 0.5, 0},
+    {"x86-avx2", 256, 16, 32 * kKiB, 0.5, 0},
+    {"hexagon-hvx128", 1024, 32, 512 * kKiB, 0.5, 256 * kKiB},
+}};
 
 ArrayRef<TargetModel> TargetModel::all() { return kTargets; }
 

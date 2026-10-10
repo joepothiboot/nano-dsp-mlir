@@ -78,8 +78,8 @@ LogicalResult Conv2DOp::verify() {
     return emitOpError() << "channel mismatch: input has C=" << c
                          << " but filter has C=" << fc;
 
-  const int64_t effKH = (kh - 1) * dilations[0] + 1;
-  const int64_t effKW = (kw - 1) * dilations[1] + 1;
+  const int64_t effKH = ((kh - 1) * dilations[0]) + 1;
+  const int64_t effKW = ((kw - 1) * dilations[1]) + 1;
 
   if (effKH > h || effKW > w)
     return emitOpError() << "dilated filter " << effKH << "x" << effKW

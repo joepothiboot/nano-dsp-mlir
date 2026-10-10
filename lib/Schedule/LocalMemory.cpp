@@ -15,12 +15,10 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
-namespace mlir {
-namespace nanodsp {
+namespace mlir::nanodsp {
 #define GEN_PASS_DEF_NANODSPPROMOTELOCAL
 #define GEN_PASS_DEF_NANODSPLOWERLOCAL
 #include "nanodsp/Schedule/Passes.h.inc"
-}
 }
 
 using namespace mlir;
@@ -37,10 +35,13 @@ struct DmaShape {
 std::optional<DmaShape> getDmaShape(ArrayRef<int64_t> tileShape,
                                     ArrayRef<int64_t> strides) {
   DmaShape dma;
-  int64_t run = 1, rows = 0, rowStride = 0;
+  int64_t run = 1;
+  int64_t rows = 0;
+  int64_t rowStride = 0;
 
-  for (int64_t d = tileShape.size() - 1; d >= 0; --d) {
-    int64_t extent = tileShape[d], stride = strides[d];
+  for (auto d = static_cast<int64_t>(tileShape.size()) - 1; d >= 0; --d) {
+    int64_t extent = tileShape[d];
+    int64_t stride = strides[d];
 
     if (extent == 1)
       continue;
@@ -157,7 +158,7 @@ SmallVector<TilePlan> planTiles(scf::ForOp loop) {
       continue;
 
     SmallVector<int64_t> strides;
-    int64_t offset;
+    int64_t offset = 0;
 
     if (failed(srcType.getStridesAndOffset(strides, offset)))
       continue;
@@ -240,7 +241,8 @@ PromotedTile promoteTile(RewriterBase &rewriter, const TilePlan &plan,
   SmallVector<Value> dstIndices(plan.shape.size(), zero);
   Value numElements =
       arith::ConstantIndexOp::create(rewriter, loc, plan.dma.numElements);
-  Value stride, eltsPerStride;
+  Value stride;
+  Value eltsPerStride;
 
   if (plan.dma.stride) {
     stride = arith::ConstantIndexOp::create(rewriter, loc, *plan.dma.stride);
@@ -270,7 +272,7 @@ void eraseDeadDefs(RewriterBase &rewriter, SmallVector<Operation *> worklist) {
   while (!worklist.empty()) {
     Operation *op = worklist.pop_back_val();
 
-    if (!op || erased.contains(op))
+    if ((op == nullptr) || erased.contains(op))
       continue;
 
     bool deadAlloc = isa<memref::AllocOp>(op) &&
@@ -472,7 +474,8 @@ struct NanoDSPPromoteLocalPass
              << "' has " << target.localMemBytes;
 
     Operation *nest = getOutermostLoop(loop);
-    SmallVector<PromotedTile> promotedTiles, pipelined;
+    SmallVector<PromotedTile> promotedTiles;
+    SmallVector<PromotedTile> pipelined;
 
     for (const TilePlan &plan : plans) {
       PromotedTile promoted = promoteTile(rewriter, plan, nest, target);

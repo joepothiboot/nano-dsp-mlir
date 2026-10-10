@@ -65,7 +65,7 @@ template <typename Run> Timing time_samples(Run run) {
     squared += (s - mean) * (s - mean);
 
   std::vector<double> ordered = samples;
-  std::sort(ordered.begin(), ordered.end());
+  std::ranges::sort(ordered);
 
   double median = (ordered[kSamples / 2 - 1] + ordered[kSamples / 2]) / 2.0;
 
@@ -81,7 +81,7 @@ inline std::string json_row(const std::string &impl, const std::string &device,
                             int m, int n, int k, const Timing &t,
                             const std::string &checked, double bound_used) {
   double ops = 2.0 * m * n * k;
-  double bytes = 4.0 * (double(m) * k + double(k) * n + double(m) * n);
+  double bytes = 4.0 * (static_cast<double>(m) * k + static_cast<double>(k) * n + static_cast<double>(m) * n);
   std::string shape = shape_name(m, n, k);
   char buf[1024];
 

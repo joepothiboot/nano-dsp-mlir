@@ -6,8 +6,7 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Support/LLVM.h"
 
-namespace mlir {
-namespace nanodsp {
+namespace mlir::nanodsp {
 
 struct TileSizes {
   SmallVector<int64_t> loopRanges;
@@ -21,7 +20,6 @@ uint64_t computeWorkingSetBytes(linalg::LinalgOp op, ArrayRef<int64_t> tile);
 FailureOr<TileSizes> computeTileSizes(linalg::LinalgOp op,
                                       const TargetModel &target);
 
-}
 }
 
 #endif

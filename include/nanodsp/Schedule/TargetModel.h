@@ -14,16 +14,19 @@ namespace nanodsp {
 
 struct TargetModel {
   llvm::StringRef name;
-  unsigned vectorBits;
-  unsigned numVectorRegs;
-  uint64_t cacheBytes;
-  double cacheFraction;
-  uint64_t localMemBytes;
+  unsigned vectorBits = 0;
+  unsigned numVectorRegs = 0;
+  uint64_t cacheBytes = 0;
+  double cacheFraction = 0.0;
+  uint64_t localMemBytes = 0;
 
-  unsigned lanes(unsigned elemBits) const { return vectorBits / elemBits; }
+  [[nodiscard]] unsigned lanes(unsigned elemBits) const {
+    return vectorBits / elemBits;
+  }
 
-  uint64_t tileBudgetBytes() const {
-    return static_cast<uint64_t>(cacheBytes * cacheFraction);
+  [[nodiscard]] uint64_t tileBudgetBytes() const {
+    return static_cast<uint64_t>(static_cast<double>(cacheBytes) *
+                                 cacheFraction);
   }
 
   static std::optional<TargetModel> lookup(llvm::StringRef name);

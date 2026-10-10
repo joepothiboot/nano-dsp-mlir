@@ -3,13 +3,11 @@
 
 #include "nanodsp/Conversion/DSPToLinalg/DSPToLinalg.h"
 
-namespace mlir {
-namespace nanodsp {
+namespace mlir::nanodsp {
 
 #define GEN_PASS_REGISTRATION
 #include "nanodsp/Conversion/Passes.h.inc"
 
-}
 }
 
 #endif
