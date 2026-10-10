@@ -54,6 +54,7 @@ cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" -G Ninja \
   -DMLIR_DIR="${MLIR_DIR}" \
   ${TABLEGEN_EXE:+-DMLIR_TABLEGEN_EXE="${TABLEGEN_EXE}"} \
   -DNANODSP_LIT_SOURCE_DIR="${ROOT_DIR}/test" \
+  ${NANODSP_SANITIZE:+-DNANODSP_SANITIZE=ON} \
   ${LIT_EXE:+-DLLVM_EXTERNAL_LIT="${LIT_EXE}"}
 
 cmake --build "${BUILD_DIR}" --target check-nanodsp

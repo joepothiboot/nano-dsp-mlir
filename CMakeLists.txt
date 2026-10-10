@@ -29,6 +29,14 @@ include_directories(${PROJECT_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
+option(NANODSP_SANITIZE "Build nano-dsp code with ASan and UBSan" OFF)
+
+if(NANODSP_SANITIZE)
+  set(NANODSP_SANITIZE_FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+  add_compile_options(${NANODSP_SANITIZE_FLAGS})
+  add_link_options(${NANODSP_SANITIZE_FLAGS})
+endif()
+
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(tools)
