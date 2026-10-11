@@ -47,5 +47,11 @@ config.substitutions.append((
 ))
 
 tool_dirs = [config.nanodsp_tools_dir, config.llvm_tools_dir]
-tools = ["nanodsp-opt", "mlir-opt", "mlir-runner", "mlir-translate", "llc"]
+tools = ["nanodsp-opt", "nanodsp-translate", "nanodsp-golden", "mlir-opt", "mlir-runner", "mlir-translate", "llc"]
 llvm_config.add_tool_substitutions(tools, tool_dirs)
+mnpu_sim = os.environ.get("MNPU_SIM") or os.path.join(
+    os.path.dirname(real_root), "mock-npu-bench", "build", "mnpu-sim")
+
+if os.path.isfile(mnpu_sim) and os.access(mnpu_sim, os.X_OK):
+    config.available_features.add("mnpu-sim")
+    config.substitutions.append(("%mnpu-sim", mnpu_sim))

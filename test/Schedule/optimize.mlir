@@ -7,7 +7,7 @@
 // RUN:     -nanodsp-optimize=schedule-file=%S/no-such-schedule.mlir 2>&1 \
 // RUN: | FileCheck %s --check-prefix=BAD-FILE
 
-// BAD-TARGET: error: unknown target 'no-such-target' (known: host-neon, x86-avx2, hexagon-hvx128)
+// BAD-TARGET: error: unknown target 'no-such-target' (known: host-neon, x86-avx2, hexagon-hvx128, mn1)
 // BAD-FILE: no-such-schedule.mlir
 
 // CHECK-LABEL: func.func @matmul

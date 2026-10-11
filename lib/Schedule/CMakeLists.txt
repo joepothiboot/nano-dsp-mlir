@@ -1,5 +1,6 @@
 add_mlir_library(NanoDSPSchedule
   LocalMemory.cpp
+  LocalMemoryUtils.cpp
   Passes.cpp
   ScheduleGen.cpp
   TargetModel.cpp

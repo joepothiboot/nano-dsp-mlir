@@ -83,7 +83,14 @@ def NanoDSPPromoteLocal : Pass<"nanodsp-promote-local", "::mlir::ModuleOp"> {
     at the top of each iteration); if even that does not fit, it reports an
     error at the loop.
 
-    The output tile is not promoted. DMAs move one contiguous run or one
+    Output tiles are promoted when `promote-outputs` is set, and always for
+    a target without a cache (`mn1`), whose core can only address local
+    memory: a tile that is read and written is loaded before and stored
+    after the loop when it does not change with the loop, and loaded at the
+    top and stored at the bottom of each iteration when it does. On such a
+    target, a loop nest that still uses a buffer in main memory after tile
+    promotion (an op small enough to need no cache tile) gets the whole
+    buffer staged around the nest. DMAs move one contiguous run or one
     level of strided rows; a tile that needs more is left in place.
   }];
 
@@ -93,6 +100,9 @@ def NanoDSPPromoteLocal : Pass<"nanodsp-promote-local", "::mlir::ModuleOp"> {
     Option<"doubleBuffer", "double-buffer", "bool", "true",
            "Double-buffer tiles that change with the loop, so the DMA for "
            "the next tile can overlap compute on the current one">,
+    Option<"promoteOutputs", "promote-outputs", "bool", "false",
+           "Also stage output tiles through local memory (always on for a "
+           "target without a cache)">,
   ];
 
   let dependentDialects = [

@@ -43,6 +43,13 @@ library implementing the same ops. See `README.md` for the full pitch and roadma
   matmul; `scripts/run-t4.sh` runs both plus Mojo and `ncu` on Colab (see
   `docs/07-cuda-triton.md`). CUDA kernels stay bit-exact via
   `__fmul_rn`/`__fadd_rn`; constants in `cuda/constants.h`
+- `lib/Target/MN1/`, `tools/nanodsp-translate/` — MN1 backend
+  (`--mlir-to-mn1`): instruction selection, register ownership (no spilling),
+  DMA lowering; constants in `lib/Target/MN1/MN1Constants.h`;
+  `tools/nanodsp-golden/` writes inputs and reference outputs;
+  `test/MN1/e2e-*.mlir` run on `mnpu-sim` (feature `mnpu-sim`, from `MNPU_SIM`
+  or a sibling mock-npu-bench checkout); `scripts/sweep-mn1.sh` (see
+  `docs/08-mn1-backend.md`)
 - `docker/hexagon/`, `scripts/run-hexagon.sh`, `test/Hexagon/` — emulated Hexagon V68
   (HVX) run of the kernels, bit-checked against `reference/`; needs Docker and
   is not part of `check-nanodsp` (see `docs/hexagon-target.md`)

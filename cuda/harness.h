@@ -3,6 +3,7 @@
 #include "constants.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -49,10 +50,11 @@ template <typename Run> Timing time_samples(Run run) {
     elapsed = seconds_for(run, iterations);
   }
 
-  std::vector<double> samples{elapsed / iterations};
+  std::vector<double> samples{elapsed / static_cast<double>(iterations)};
 
   while (static_cast<int>(samples.size()) < kSamples)
-    samples.push_back(seconds_for(run, iterations) / iterations);
+    samples.push_back(seconds_for(run, iterations) /
+                      static_cast<double>(iterations));
 
   double mean = 0.0;
 
@@ -81,11 +83,13 @@ inline std::string json_row(const std::string &impl, const std::string &device,
                             int m, int n, int k, const Timing &t,
                             const std::string &checked, double bound_used) {
   double ops = 2.0 * m * n * k;
-  double bytes = 4.0 * (static_cast<double>(m) * k + static_cast<double>(k) * n + static_cast<double>(m) * n);
+  double bytes =
+      4.0 * (static_cast<double>(m) * k + static_cast<double>(k) * n +
+             static_cast<double>(m) * n);
   std::string shape = shape_name(m, n, k);
-  char buf[1024];
+  std::array<char, 1024> buf{};
 
-  std::snprintf(buf, sizeof buf,
+  std::snprintf(buf.data(), buf.size(),
                 "    {\"name\": \"matmul/%s/%s\", \"op\": \"matmul\", "
                 "\"shape\": \"%s\", \"impl\": \"%s\", \"config\": \"%s\", "
                 "\"real_time\": %.3f, \"median_time\": %.3f, "
@@ -99,7 +103,7 @@ inline std::string json_row(const std::string &impl, const std::string &device,
                 kSamples, ops, ops / t.best_ns, bytes, ops / bytes,
                 checked.c_str(), bound_used);
 
-  return buf;
+  return buf.data();
 }
 
 }

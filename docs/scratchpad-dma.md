@@ -97,8 +97,14 @@ buffer, with the subviews in between recreated for the new layout.
   iteration). If even that does not fit, it is an error at the loop.
   `double-buffer=false` forces single buffering.
 
-The output tile is not promoted: it stays in main memory and is written in
-place, as before.
+Output tiles are promoted with `promote-outputs=true`, and always for a
+target without a cache (`mn1`): a tile that is read and written is loaded
+before and stored after the cache loop when it does not change with it, and
+loaded and stored every iteration when it does; a write-only tile is only
+stored. On such a target a loop nest that still uses main memory after tile
+promotion (an op whose working set needed no cache tile) gets the whole
+buffers staged around it. Without the option, as on `hexagon-hvx128`, the
+output tile stays in main memory and is written in place.
 
 ### Before
 

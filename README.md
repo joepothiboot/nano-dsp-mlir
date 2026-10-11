@@ -31,7 +31,10 @@ tiles are emitted as a Transform-dialect schedule, so a schedule can be printed,
 edited and checked in, or replaced with a hand-written one, without rebuilding
 the compiler.
 
-Supported targets: `host-neon`, `x86-avx2`, `hexagon-hvx128`.
+Supported targets: `host-neon`, `x86-avx2`, `hexagon-hvx128`, and `mn1`, the
+scratchpad/DMA accelerator of
+[mock-npu-bench](https://github.com/joepothiboot/mock-npu-bench), through its
+own backend (`nanodsp-translate --mlir-to-mn1`).
 
 ## Status
 
@@ -41,6 +44,7 @@ Supported targets: `host-neon`, `x86-avx2`, `hexagon-hvx128`.
 | Tiling and vectorization (Transform dialect)          | Done, bit-exact                                           |
 | Bufferization and lowering to LLVM                    | Done (upstream passes)                                    |
 | Local memory: VTCM promotion with double-buffered DMA | Functional; DMAs lowered to synchronous copies            |
+| MN1 backend: tiles, output promotion, DMA, assembly   | add and matmul bit-exact on the MN1 simulator             |
 | Benchmark harness, MLIR vs Mojo vs C++                | First measurements on Apple M2                            |
 | Mojo CPU kernels and C++ reference                    | Done (Mojo 1.1)                                           |
 | Mojo GPU kernels (matmul in 3 variants, conv2d)       | Bit-exact on Apple M2 and NVIDIA T4, compared with cuBLAS |
@@ -57,6 +61,12 @@ CUDA and Triton: on the same T4, in one session, a bit-exact CUDA kernel with
 autotuned Triton matches cuBLAS there but is not bit-exact. Nsight Compute
 counters explain the gap. Details in
 [docs/07-cuda-triton.md](docs/07-cuda-triton.md).
+
+MN1: the compiler stages every operand through the 64 KiB scratchpad
+(double-buffered input tiles, promoted output tiles, row-by-row strided DMAs)
+and emits MN1 assembly. Matmul 128³ runs bit-exact in 3.36 M simulated
+cycles, 2.9× a hand-tiled kernel; a 60-tile sweep puts the model's tile within
+1% of the best. Details in [docs/08-mn1-backend.md](docs/08-mn1-backend.md).
 
 ## Building
 
@@ -98,6 +108,10 @@ build/bin/nanodsp-opt input.mlir \
 - `-nanodsp-lower-to-llvm` bufferizes and lowers to the LLVM dialect. Add
   `local-target=hexagon-hvx128` to promote cache tiles to local memory (see
   [docs/scratchpad-dma.md](docs/scratchpad-dma.md)).
+- MN1: `-nanodsp-optimize=target=mn1 -nanodsp-bufferize
+-nanodsp-promote-local=target=mn1`, then pipe into
+  `nanodsp-translate --mlir-to-mn1` for assembly (see
+  [docs/08-mn1-backend.md](docs/08-mn1-backend.md)).
 
 ## Mojo kernels and C++ reference
 
@@ -137,6 +151,8 @@ described in [docs/mojo-gpu.md](docs/mojo-gpu.md).
 ```
 include/nanodsp/, lib/   dialect, lowering, target model, schedule passes
 tools/nanodsp-opt/       the compiler driver
+tools/nanodsp-translate/ MN1 assembly backend driver (lib/Target/MN1/)
+tools/nanodsp-golden/    inputs and reference outputs for end-to-end checks
 test/                    lit tests (Dialect, Conversion, Schedule, Integration, Hexagon)
 schedules/               hand-written Transform-dialect schedules
 mojo/nanodsp/            Mojo package (CPU kernels, layout API, GPU kernels)
@@ -157,6 +173,7 @@ docs/                    design notes
 - [docs/05-soundness.md](docs/05-soundness.md): why the schedules preserve results
 - [docs/06-gpu-results.md](docs/06-gpu-results.md): GPU measurements, M2 and T4 vs cuBLAS
 - [docs/07-cuda-triton.md](docs/07-cuda-triton.md): CUDA and Triton vs Mojo and cuBLAS on a T4, with Nsight Compute
+- [docs/08-mn1-backend.md](docs/08-mn1-backend.md): MN1 bring-up log, backend design, simulated results and tile sweep
 - [docs/mojo-kernels.md](docs/mojo-kernels.md), [docs/mojo-api-design.md](docs/mojo-api-design.md), [docs/mojo-gpu.md](docs/mojo-gpu.md): Mojo library design
 - [docs/quantization.md](docs/quantization.md): `dsp.qmatmul` semantics and rounding
 - [docs/hexagon-target.md](docs/hexagon-target.md), [docs/scratchpad-dma.md](docs/scratchpad-dma.md): Hexagon target and local memory
@@ -168,8 +185,10 @@ docs/                    design notes
 - Tile sizes must divide loop extents; there is no masking or peeling.
 - The accumulator tile is reloaded on every `k` step instead of being hoisted.
 - `cacheFraction = 0.5` has not been validated against hardware.
-- Local-memory DMAs are lowered to synchronous copies; QEMU models neither VTCM
-  nor DMA timing. The output tile is not promoted.
+- On Hexagon, local-memory DMAs are lowered to synchronous copies; QEMU models
+  neither VTCM nor DMA timing. Output tiles are promoted only with
+  `promote-outputs` (always on for MN1).
+- The MN1 backend does not spill, and supports `dsp.add` and `dsp.matmul` on f32.
 
 ## License
 

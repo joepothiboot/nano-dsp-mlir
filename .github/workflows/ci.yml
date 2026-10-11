@@ -24,6 +24,16 @@ jobs:
           pip3 install --break-system-packages lit
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
+      - uses: actions/checkout@v4
+        with:
+          repository: joepothiboot/mock-npu-bench
+          path: mock-npu-bench
+
+      - name: Build the MN1 simulator for the end-to-end tests
+        run: |
+          make -C mock-npu-bench build/mnpu-sim CXX=clang++
+          echo "MNPU_SIM=$GITHUB_WORKSPACE/mock-npu-bench/build/mnpu-sim" >> "$GITHUB_ENV"
+
       - name: MLIR lit tests
         run: ./test.sh
 
@@ -51,3 +61,25 @@ jobs:
           -f event_type=project-release
           -f "client_payload[project]=nano-dsp-mlir"
           -f "client_payload[ref]=$GITHUB_REF_NAME"
+
+  sanitize-and-tidy:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM/MLIR, Ninja and lit
+        run: |
+          brew install llvm ninja
+          pip3 install --break-system-packages lit
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+      - name: MLIR lit tests under ASan and UBSan
+        run: NANODSP_SANITIZE=1 BUILD_DIR=build-asan ./test.sh
+
+      - uses: prefix-dev/setup-pixi@v0.8.1
+
+      - name: C++ reference under ASan and UBSan
+        run: pixi run test-reference-asan
+
+      - name: clang-tidy
+        run: BUILD_DIR=build-asan scripts/tidy.sh

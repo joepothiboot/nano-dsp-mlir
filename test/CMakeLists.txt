@@ -10,6 +10,8 @@ configure_lit_site_cfg(
 set(NANODSP_TEST_DEPENDS
   FileCheck count not
   nanodsp-opt
+  nanodsp-translate
+  nanodsp-golden
   mlir-opt
   mlir-runner
   mlir-translate

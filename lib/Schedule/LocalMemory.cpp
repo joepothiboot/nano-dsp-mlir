@@ -1,19 +1,21 @@
+#include "LocalMemoryUtils.h"
+
 #include "nanodsp/Dialect/DSP/IR/DSPAttrs.h"
 #include "nanodsp/Schedule/Passes.h"
 #include "nanodsp/Schedule/ScheduleGen.h"
 #include "nanodsp/Schedule/TargetModel.h"
 
-#include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Dialect/Arith/Utils/Utils.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/Transforms/Transforms.h"
+#include "mlir/Dialect/MemRef/Utils/MemRefUtils.h"
+#include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
-#include "mlir/IR/PatternMatch.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Transforms/CSE.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallPtrSet.h"
 
 namespace mlir::nanodsp {
 #define GEN_PASS_DEF_NANODSPPROMOTELOCAL
@@ -23,121 +25,20 @@ namespace mlir::nanodsp {
 
 using namespace mlir;
 using namespace mlir::nanodsp;
+using namespace mlir::nanodsp::local;
 
 namespace {
-
-struct DmaShape {
-  int64_t numElements = 1;
-  std::optional<int64_t> stride;
-  int64_t eltsPerStride = 0;
-};
-
-std::optional<DmaShape> getDmaShape(ArrayRef<int64_t> tileShape,
-                                    ArrayRef<int64_t> strides) {
-  DmaShape dma;
-  int64_t run = 1;
-  int64_t rows = 0;
-  int64_t rowStride = 0;
-
-  for (auto d = static_cast<int64_t>(tileShape.size()) - 1; d >= 0; --d) {
-    int64_t extent = tileShape[d];
-    int64_t stride = strides[d];
-
-    if (extent == 1)
-      continue;
-
-    if (ShapedType::isDynamic(stride))
-      return std::nullopt;
-
-    if (rows == 0 && stride == run) {
-      run *= extent;
-    } else if (rows == 0) {
-      rows = extent;
-      rowStride = stride;
-    } else if (stride == rows * rowStride) {
-      rows *= extent;
-    } else {
-      return std::nullopt;
-    }
-  }
-
-  dma.numElements = run * std::max<int64_t>(rows, 1);
-
-  if (rows != 0) {
-    dma.stride = rowStride;
-    dma.eltsPerStride = run;
-  }
-
-  return dma;
-}
-
-bool isReadOnlyView(Value view) {
-  for (Operation *user : view.getUsers()) {
-    if (auto subview = dyn_cast<memref::SubViewOp>(user)) {
-      if (!isReadOnlyView(subview.getResult()))
-        return false;
-
-      continue;
-    }
-
-    if (isa<vector::TransferReadOp, memref::LoadOp>(user))
-      continue;
-
-    if (auto linalgOp = dyn_cast<linalg::LinalgOp>(user)) {
-      bool onlyInput =
-          llvm::all_of(linalgOp->getOpOperands(), [&](OpOperand &operand) {
-            return operand.get() != view || linalgOp.isDpsInput(&operand);
-          });
-      if (onlyInput)
-        continue;
-    }
-
-    return false;
-  }
-
-  return true;
-}
-
-FailureOr<SmallVector<Operation *>> getLoopLocalSlice(Operation *op,
-                                                      scf::ForOp loop) {
-  BackwardSliceOptions options;
-  options.omitBlockArguments = true;
-  options.filter = [&](Operation *o) {
-    return o->getBlock() == loop.getBody();
-  };
-
-  SetVector<Operation *> slice;
-
-  if (failed(getBackwardSlice(op, &slice, options)))
-    return failure();
-
-  SmallVector<Operation *> ops(slice.begin(), slice.end());
-
-  if (!llvm::all_of(ops, isPure))
-    return failure();
-
-  llvm::sort(ops,
-             [](Operation *a, Operation *b) { return a->isBeforeInBlock(b); });
-  return ops;
-}
-
-bool dependsOn(Operation *op, ArrayRef<Operation *> slice, Value value) {
-  auto reads = [&](Operation *o) {
-    return llvm::is_contained(o->getOperands(), value);
-  };
-
-  return reads(op) || llvm::any_of(slice, reads);
-}
 
 struct TilePlan {
   memref::SubViewOp tile;
   SmallVector<int64_t> shape;
   DmaShape dma;
+  Access access = Access::Read;
   bool varies = false;
   uint64_t bytes = 0;
 };
 
-SmallVector<TilePlan> planTiles(scf::ForOp loop) {
+SmallVector<TilePlan> planTiles(scf::ForOp loop, bool outputs) {
   SmallVector<TilePlan> plans;
 
   for (Operation &op : loop.getBody()->without_terminator()) {
@@ -154,7 +55,12 @@ SmallVector<TilePlan> planTiles(scf::ForOp loop) {
         !tileType.getElementType().isIntOrFloat())
       continue;
 
-    if (!isReadOnlyView(tile.getResult()))
+    std::optional<Access> access = classifyView(tile.getResult());
+
+    if (!access || *access == Access::None)
+      continue;
+
+    if (*access != Access::Read && !outputs)
       continue;
 
     SmallVector<int64_t> strides;
@@ -177,6 +83,7 @@ SmallVector<TilePlan> planTiles(scf::ForOp loop) {
     plan.tile = tile;
     plan.shape = llvm::to_vector(tileType.getShape());
     plan.dma = *dma;
+    plan.access = *access;
     plan.varies = dependsOn(tile, *slice, loop.getInductionVar());
     plan.bytes = tileType.getNumElements() *
                  llvm::divideCeil(tileType.getElementTypeBitWidth(), 8);
@@ -186,75 +93,65 @@ SmallVector<TilePlan> planTiles(scf::ForOp loop) {
   return plans;
 }
 
-void replaceAndRetype(RewriterBase &rewriter, Value oldValue, Value newValue) {
-  for (OpOperand &use : llvm::make_early_inc_range(oldValue.getUses())) {
-    Operation *user = use.getOwner();
-    auto subview = dyn_cast<memref::SubViewOp>(user);
-
-    if (!subview) {
-      rewriter.modifyOpInPlace(user, [&] { use.set(newValue); });
-      continue;
-    }
-
-    OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(subview);
-    MemRefType type = memref::SubViewOp::inferRankReducedResultType(
-        subview.getType().getShape(), cast<MemRefType>(newValue.getType()),
-        subview.getMixedOffsets(), subview.getMixedSizes(),
-        subview.getMixedStrides());
-    auto retyped = memref::SubViewOp::create(
-        rewriter, subview.getLoc(), type, newValue, subview.getMixedOffsets(),
-        subview.getMixedSizes(), subview.getMixedStrides());
-    replaceAndRetype(rewriter, subview.getResult(), retyped.getResult());
-    rewriter.eraseOp(subview);
-  }
-}
-
 struct PromotedTile {
   memref::AllocOp buffer;
   memref::AllocOp tag;
   memref::DmaStartOp start;
   memref::DmaWaitOp wait;
+  memref::DmaStartOp store;
+  memref::DmaWaitOp storeWait;
 };
 
+memref::AllocOp allocLocal(RewriterBase &rewriter, Location loc,
+                           ArrayRef<int64_t> shape, Type elementType,
+                           const TargetModel &target) {
+  auto type = MemRefType::get(shape, elementType, MemRefLayoutAttrInterface(),
+                              LocalMemorySpaceAttr::get(rewriter.getContext()));
+  return memref::AllocOp::create(
+      rewriter, loc, type, rewriter.getI64IntegerAttr(target.vectorBits / 8));
+}
+
+memref::AllocOp allocTag(RewriterBase &rewriter, Location loc) {
+  return memref::AllocOp::create(rewriter, loc,
+                                 MemRefType::get({1}, rewriter.getI32Type()));
+}
+
 PromotedTile promoteTile(RewriterBase &rewriter, const TilePlan &plan,
-                         Operation *nest, const TargetModel &target) {
-  MLIRContext *ctx = rewriter.getContext();
+                         scf::ForOp loop, Operation *nest,
+                         const TargetModel &target) {
   memref::SubViewOp tile = plan.tile;
   Location loc = tile.getLoc();
 
   PromotedTile promoted;
   rewriter.setInsertionPoint(nest);
-  auto bufferType = MemRefType::get(plan.shape, tile.getType().getElementType(),
-                                    MemRefLayoutAttrInterface(),
-                                    LocalMemorySpaceAttr::get(ctx));
-  promoted.buffer = memref::AllocOp::create(
-      rewriter, loc, bufferType,
-      rewriter.getI64IntegerAttr(target.vectorBits / 8));
-  promoted.tag = memref::AllocOp::create(
-      rewriter, loc, MemRefType::get({1}, rewriter.getI32Type()));
+  promoted.buffer = allocLocal(rewriter, loc, plan.shape,
+                               tile.getType().getElementType(), target);
+  promoted.tag = allocTag(rewriter, loc);
 
   rewriter.setInsertionPointAfter(tile);
-  SmallVector<Value> srcIndices =
+  SmallVector<Value> dramIndices =
       getValueOrCreateConstantIndexOp(rewriter, loc, tile.getMixedOffsets());
   Value zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-  SmallVector<Value> dstIndices(plan.shape.size(), zero);
+  SmallVector<Value> localIndices(plan.shape.size(), zero);
   Value numElements =
       arith::ConstantIndexOp::create(rewriter, loc, plan.dma.numElements);
-  Value stride;
-  Value eltsPerStride;
+  Value source = tile.getSource();
 
-  if (plan.dma.stride) {
-    stride = arith::ConstantIndexOp::create(rewriter, loc, *plan.dma.stride);
-    eltsPerStride =
-        arith::ConstantIndexOp::create(rewriter, loc, plan.dma.eltsPerStride);
+  if (reads(plan.access)) {
+    promoted.start =
+        createDma(rewriter, loc, source, dramIndices, promoted.buffer,
+                  localIndices, plan.dma, promoted.tag);
+    promoted.wait = memref::DmaWaitOp::create(rewriter, loc, promoted.tag,
+                                              ValueRange{zero}, numElements);
   }
 
-  promoted.start = memref::DmaStartOp::create(
-      rewriter, loc, tile.getSource(), srcIndices, promoted.buffer, dstIndices,
-      numElements, promoted.tag, ValueRange{zero}, stride, eltsPerStride);
-  promoted.wait = memref::DmaWaitOp::create(rewriter, loc, promoted.tag,
-                                            ValueRange{zero}, numElements);
+  if (writes(plan.access)) {
+    rewriter.setInsertionPoint(loop.getBody()->getTerminator());
+    promoted.store = createDma(rewriter, loc, promoted.buffer, localIndices,
+                               source, dramIndices, plan.dma, promoted.tag);
+    promoted.storeWait = memref::DmaWaitOp::create(
+        rewriter, loc, promoted.tag, ValueRange{zero}, numElements);
+  }
 
   replaceAndRetype(rewriter, tile.getResult(), promoted.buffer.getResult());
   rewriter.eraseOp(tile);
@@ -262,62 +159,36 @@ PromotedTile promoteTile(RewriterBase &rewriter, const TilePlan &plan,
   return promoted;
 }
 
-void eraseDeadDefs(RewriterBase &rewriter, SmallVector<Operation *> worklist) {
-  llvm::SmallPtrSet<Operation *, 8> erased;
-  auto erase = [&](Operation *op) {
-    erased.insert(op);
-    rewriter.eraseOp(op);
-  };
-
-  while (!worklist.empty()) {
-    Operation *op = worklist.pop_back_val();
-
-    if ((op == nullptr) || erased.contains(op))
-      continue;
-
-    bool deadAlloc = isa<memref::AllocOp>(op) &&
-                     llvm::all_of(op->getUsers(), [](Operation *u) {
-                       return isa<memref::DeallocOp>(u);
-                     });
-    if (!deadAlloc && !isOpTriviallyDead(op))
-      continue;
-
-    for (Value operand : op->getOperands())
-      worklist.push_back(operand.getDefiningOp());
-
-    if (deadAlloc)
-      for (Operation *user : llvm::make_early_inc_range(op->getUsers()))
-        erase(user);
-
-    erase(op);
-  }
-}
-
-LogicalResult hoistInvariantDma(RewriterBase &rewriter, scf::ForOp loop,
-                                PromotedTile &promoted) {
-  FailureOr<SmallVector<Operation *>> slice =
-      getLoopLocalSlice(promoted.start, loop);
+LogicalResult moveInvariantDma(RewriterBase &rewriter, scf::ForOp loop,
+                               memref::DmaStartOp &start,
+                               memref::DmaWaitOp &wait, bool after) {
+  FailureOr<SmallVector<Operation *>> slice = getLoopLocalSlice(start, loop);
   if (failed(slice))
     return failure();
 
-  rewriter.setInsertionPoint(loop);
+  if (after)
+    rewriter.setInsertionPointAfter(loop);
+  else
+    rewriter.setInsertionPoint(loop);
+
   IRMapping mapping;
 
   for (Operation *op : *slice)
     rewriter.clone(*op, mapping);
 
-  rewriter.clone(*promoted.start, mapping);
-  rewriter.clone(*promoted.wait, mapping);
+  auto movedStart = cast<memref::DmaStartOp>(rewriter.clone(*start, mapping));
+  auto movedWait = cast<memref::DmaWaitOp>(rewriter.clone(*wait, mapping));
   SmallVector<Operation *> defs;
 
-  for (Operation *op :
-       {promoted.wait.getOperation(), promoted.start.getOperation()}) {
+  for (Operation *op : {wait.getOperation(), start.getOperation()}) {
     for (Value operand : op->getOperands())
       defs.push_back(operand.getDefiningOp());
 
     rewriter.eraseOp(op);
   }
 
+  start = movedStart;
+  wait = movedWait;
   eraseDeadDefs(rewriter, defs);
 
   return success();
@@ -418,6 +289,124 @@ Operation *getOutermostLoop(scf::ForOp loop) {
   return outer;
 }
 
+bool feedsCompute(Value view, Operation *within) {
+  return llvm::any_of(view.getUsers(), [&](Operation *user) {
+    if (!within->isAncestor(user))
+      return false;
+
+    if (auto subview = dyn_cast<memref::SubViewOp>(user))
+      return feedsCompute(subview.getResult(), within);
+
+    return isa<vector::TransferReadOp, vector::TransferWriteOp, memref::LoadOp,
+               memref::StoreOp, linalg::LinalgOp>(user);
+  });
+}
+
+SetVector<Value> mainMemoryOperands(scf::ForOp nest) {
+  SetVector<Value> values;
+
+  nest.walk([&](Operation *op) {
+    if (isa<memref::DmaStartOp, memref::DmaWaitOp, memref::DeallocOp>(op))
+      return;
+
+    for (Value operand : op->getOperands()) {
+      auto type = dyn_cast<MemRefType>(operand.getType());
+
+      if (!type || type.getMemorySpace() ||
+          !type.getElementType().isIntOrFloat())
+        continue;
+
+      if (!nest->isAncestor(operand.getParentRegion()->getParentOp()) &&
+          feedsCompute(operand, nest))
+        values.insert(operand);
+    }
+  });
+
+  return values;
+}
+
+uint64_t bytesOf(MemRefType type) {
+  return type.getNumElements() *
+         llvm::divideCeil(type.getElementTypeBitWidth(), 8);
+}
+
+uint64_t localBytesInUse(Operation *func) {
+  uint64_t bytes = 0;
+
+  func->walk([&](memref::AllocOp alloc) {
+    if (isa_and_nonnull<LocalMemorySpaceAttr>(alloc.getType().getMemorySpace()))
+      bytes += bytesOf(alloc.getType());
+  });
+
+  return bytes;
+}
+
+LogicalResult stageNest(RewriterBase &rewriter, scf::ForOp nest,
+                        const TargetModel &target) {
+  SetVector<Value> values = mainMemoryOperands(nest);
+  uint64_t inUse = localBytesInUse(nest->getParentOfType<func::FuncOp>());
+  uint64_t bytes = 0;
+
+  for (Value value : values) {
+    auto type = cast<MemRefType>(value.getType());
+
+    if (!memref::isStaticShapeAndContiguousRowMajor(type))
+      return nest.emitError("cannot stage a non-contiguous buffer in local "
+                            "memory for target '")
+             << target.name << "'";
+
+    bytes += bytesOf(type);
+  }
+
+  if (inUse + bytes > target.localMemBytes)
+    return nest.emitError() << "operands of this loop nest need " << bytes
+                            << " bytes of local memory on top of " << inUse
+                            << " already allocated, but target '" << target.name
+                            << "' has " << target.localMemBytes;
+
+  Location loc = nest.getLoc();
+
+  for (Value value : values) {
+    std::optional<Access> access = classifyView(value, nest);
+
+    if (!access)
+      return nest.emitError("cannot classify how this loop nest uses a buffer");
+
+    auto type = cast<MemRefType>(value.getType());
+    DmaShape whole;
+    whole.numElements = type.getNumElements();
+
+    rewriter.setInsertionPoint(nest);
+    memref::AllocOp buffer = allocLocal(rewriter, loc, type.getShape(),
+                                        type.getElementType(), target);
+    memref::AllocOp tag = allocTag(rewriter, loc);
+    Value zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
+    SmallVector<Value> indices(type.getRank(), zero);
+    Value numElements =
+        arith::ConstantIndexOp::create(rewriter, loc, whole.numElements);
+
+    if (reads(*access)) {
+      createDma(rewriter, loc, value, indices, buffer, indices, whole, tag);
+      memref::DmaWaitOp::create(rewriter, loc, tag, ValueRange{zero},
+                                numElements);
+    }
+
+    replaceAndRetype(rewriter, value, buffer.getResult(), nest);
+    rewriter.setInsertionPointAfter(nest);
+
+    if (writes(*access)) {
+      createDma(rewriter, loc, buffer, indices, value, indices, whole, tag);
+      memref::DmaWaitOp::create(rewriter, loc, tag, ValueRange{zero},
+                                numElements);
+    }
+
+    memref::DeallocOp::create(rewriter, loc, buffer);
+    memref::DeallocOp::create(rewriter, loc, tag);
+  }
+
+  return success();
+}
+
 struct NanoDSPPromoteLocalPass
     : public mlir::nanodsp::impl::NanoDSPPromoteLocalBase<
           NanoDSPPromoteLocalPass> {
@@ -440,18 +429,38 @@ struct NanoDSPPromoteLocalPass
       return;
 
     IRRewriter rewriter(&getContext());
+    bool outputs = promoteOutputs || !target->hasCache();
 
     for (scf::ForOp loop : loops)
-      if (failed(promoteLoop(rewriter, loop, *target)))
+      if (failed(promoteLoop(rewriter, loop, *target, outputs)))
         return signalPassFailure();
+
+    if (!target->hasCache() && failed(stageNests(rewriter, module, *target)))
+      return signalPassFailure();
 
     DominanceInfo domInfo;
     eliminateCommonSubExpressions(rewriter, domInfo, module);
   }
 
+  static LogicalResult stageNests(RewriterBase &rewriter, ModuleOp module,
+                                  const TargetModel &target) {
+    for (auto func : module.getOps<func::FuncOp>()) {
+      if (func.isExternal())
+        continue;
+
+      SmallVector<scf::ForOp> nests(func.getBody().getOps<scf::ForOp>());
+
+      for (scf::ForOp nest : nests)
+        if (failed(stageNest(rewriter, nest, target)))
+          return failure();
+    }
+
+    return success();
+  }
+
   LogicalResult promoteLoop(RewriterBase &rewriter, scf::ForOp loop,
-                            const TargetModel &target) {
-    SmallVector<TilePlan> plans = planTiles(loop);
+                            const TargetModel &target, bool outputs) {
+    SmallVector<TilePlan> plans = planTiles(loop, outputs);
 
     if (plans.empty())
       return success();
@@ -459,8 +468,10 @@ struct NanoDSPPromoteLocalPass
     auto requiredBytes = [&](bool doubled) {
       uint64_t bytes = 0;
 
-      for (const TilePlan &plan : plans)
-        bytes += plan.bytes * (doubled && plan.varies ? 2 : 1);
+      for (const TilePlan &plan : plans) {
+        bool pipelined = doubled && plan.varies && plan.access == Access::Read;
+        bytes += plan.bytes * (pipelined ? 2 : 1);
+      }
 
       return bytes;
     };
@@ -469,7 +480,7 @@ struct NanoDSPPromoteLocalPass
 
     if (requiredBytes(false) > target.localMemBytes)
       return loop.emitError()
-             << "input tiles of this cache tile need " << requiredBytes(false)
+             << "tiles of this cache tile need " << requiredBytes(false)
              << " bytes of local memory, but target '" << target.name
              << "' has " << target.localMemBytes;
 
@@ -478,12 +489,19 @@ struct NanoDSPPromoteLocalPass
     SmallVector<PromotedTile> pipelined;
 
     for (const TilePlan &plan : plans) {
-      PromotedTile promoted = promoteTile(rewriter, plan, nest, target);
+      PromotedTile promoted = promoteTile(rewriter, plan, loop, nest, target);
 
-      if (!plan.varies && failed(hoistInvariantDma(rewriter, loop, promoted)))
+      if (!plan.varies && promoted.store &&
+          failed(moveInvariantDma(rewriter, loop, promoted.store,
+                                  promoted.storeWait, true)))
+        return loop.emitError("could not sink a loop-invariant tile store");
+
+      if (!plan.varies && promoted.start &&
+          failed(moveInvariantDma(rewriter, loop, promoted.start, promoted.wait,
+                                  false)))
         return loop.emitError("could not hoist a loop-invariant tile DMA");
 
-      if (plan.varies && doubled) {
+      if (plan.varies && plan.access == Access::Read && doubled) {
         if (failed(multiBufferTile(rewriter, promoted)))
           return loop.emitError("could not double-buffer a tile");
 

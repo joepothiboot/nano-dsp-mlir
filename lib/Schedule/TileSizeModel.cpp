@@ -178,7 +178,7 @@ mlir::nanodsp::computeTileSizes(linalg::LinalgOp op,
     if (d && hasNonUnitStride(op, *d))
       sizes.reg[*d] = 1;
 
-  if (reductionDims.empty()) {
+  if (reductionDims.empty() && target.hasCache()) {
     sizes.cache = sizes.loopRanges;
     sizes.cacheWorkingSetBytes = computeWorkingSetBytes(op, sizes.cache);
 

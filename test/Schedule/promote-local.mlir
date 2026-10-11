@@ -143,7 +143,7 @@ func.func @over_budget(%a: memref<512x256xf32>, %b: memref<256x64xf32>, %c: memr
   %c0 = arith.constant 0 : index
   %c128 = arith.constant 128 : index
   %c256 = arith.constant 256 : index
-  // expected-error @+1 {{input tiles of this cache tile need 294912 bytes of local memory, but target 'hexagon-hvx128' has 262144}}
+  // expected-error @+1 {{tiles of this cache tile need 294912 bytes of local memory, but target 'hexagon-hvx128' has 262144}}
   scf.for %k = %c0 to %c256 step %c128 {
     %sa = memref.subview %a[0, %k] [512, 128] [1, 1] : memref<512x256xf32> to memref<512x128xf32, strided<[256, 1], offset: ?>>
     %sb = memref.subview %b[%k, 0] [128, 64] [1, 1] : memref<256x64xf32> to memref<128x64xf32, strided<[64, 1], offset: ?>>

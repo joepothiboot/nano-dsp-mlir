@@ -10,10 +10,11 @@ using namespace mlir::nanodsp;
 
 constexpr uint64_t kKiB = 1024;
 
-static const std::array<TargetModel, 3> kTargets = {{
+static const std::array<TargetModel, 4> kTargets = {{
     {"host-neon", 128, 32, 128 * kKiB, 0.5, 0},
     {"x86-avx2", 256, 16, 32 * kKiB, 0.5, 0},
     {"hexagon-hvx128", 1024, 32, 512 * kKiB, 0.5, 256 * kKiB},
+    {"mn1", 256, 16, 0, 0.5, 64 * kKiB},
 }};
 
 ArrayRef<TargetModel> TargetModel::all() { return kTargets; }

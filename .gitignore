@@ -1,5 +1,6 @@
 # CMake and build output
 /build/
+/build-asan/
 /cmake-build-*/
 CMakeCache.txt
 CMakeFiles/

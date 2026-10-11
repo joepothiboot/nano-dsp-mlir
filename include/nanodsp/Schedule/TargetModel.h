@@ -24,9 +24,11 @@ struct TargetModel {
     return vectorBits / elemBits;
   }
 
+  [[nodiscard]] bool hasCache() const { return cacheBytes != 0; }
+
   [[nodiscard]] uint64_t tileBudgetBytes() const {
-    return static_cast<uint64_t>(static_cast<double>(cacheBytes) *
-                                 cacheFraction);
+    uint64_t capacity = hasCache() ? cacheBytes : localMemBytes;
+    return static_cast<uint64_t>(static_cast<double>(capacity) * cacheFraction);
   }
 
   static std::optional<TargetModel> lookup(llvm::StringRef name);

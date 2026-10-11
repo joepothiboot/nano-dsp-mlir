@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 namespace nanodsp::cuda {
 
 inline constexpr int kTile = 16;
@@ -19,7 +21,7 @@ inline constexpr int kVecThreadN = 8;
 inline constexpr int kSamples = 10;
 inline constexpr double kMinSampleSeconds = 0.05;
 
-inline constexpr int kBenchSizes[] = {256, 512, 1024, 2048};
+inline constexpr std::array<int, 4> kBenchSizes = {256, 512, 1024, 2048};
 inline constexpr int kProfileSize = 1024;
 
 }
