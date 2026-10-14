@@ -9,7 +9,9 @@ OUT=build/hexagon
 TARGET=hexagon-unknown-linux-musl
 HVX="+hvxv68,+hvx-length128b"
 HVX_FP=0
+MOJO=0
 [[ "${1:-}" == "--hvx-fp" ]] && HVX_FP=1
+[[ "${1:-}" == "--mojo" ]] && MOJO=1
 
 cd "${ROOT}"
 mkdir -p "${OUT}"
@@ -28,6 +30,27 @@ kernel_object() {
         -o "${OUT}/$1-$2.o"
 }
 
+if [[ ! -d "${OUT}/sysroot/usr/include/c++" ]]; then
+  mkdir -p "${OUT}/sysroot"
+  docker run --rm --platform linux/amd64 "${IMAGE}" \
+      tar -C "/opt/hexagon/toolchain/target/${TARGET}" -cf - \
+        --exclude='usr/include/linux/netfilter*' usr/include \
+    | tar -xf - -C "${OUT}/sysroot"
+fi
+
+if (( MOJO )); then
+  scripts/mojo-to-hexagon.sh mojo/export/f32.mojo "+v68" "${OUT}/mojo-f32.o"
+  scripts/mojo-to-hexagon.sh mojo/export/i8.mojo "${HVX}" "${OUT}/mojo-i8.o"
+  "${LLVM_BIN}/clang++" --target="${TARGET}" --sysroot="${OUT}/sysroot" -mv68 \
+    -O2 -std=c++20 -ffp-contract=off -c test/Hexagon/mojo_harness.cpp \
+    -o "${OUT}/mojo-harness.o"
+  echo "== mojo"
+  in_image "clang++ --target=${TARGET} -static ${OUT}/mojo-harness.o \
+      ${OUT}/mojo-f32.o ${OUT}/mojo-i8.o -o ${OUT}/harness-mojo &&
+    ${QEMU} ${OUT}/harness-mojo"
+  exit
+fi
+
 SCHED=-nanodsp-optimize=target=hexagon-hvx128
 kernel_object kernels-f32 scalar "" "${HVX},+hvx-ieee-fp"
 kernel_object kernels-i8 scalar "" "${HVX}"
@@ -37,14 +60,6 @@ kernel_object kernels-f32 hvx-qf32 "${SCHED}" "${HVX}"
 LOCAL="generic-alloc local-target=hexagon-hvx128"
 kernel_object kernels-local-f32 scalar "${SCHED}" "" "${LOCAL}"
 kernel_object kernels-local-i8 hvx "${SCHED}" "${HVX}" "${LOCAL}"
-
-if [[ ! -d "${OUT}/sysroot/usr/include/c++" ]]; then
-  mkdir -p "${OUT}/sysroot"
-  docker run --rm --platform linux/amd64 "${IMAGE}" \
-      tar -C "/opt/hexagon/toolchain/target/${TARGET}" -cf - \
-        --exclude='usr/include/linux/netfilter*' usr/include \
-    | tar -xf - -C "${OUT}/sysroot"
-fi
 
 for variant in harness harness-local; do
   defines=""
