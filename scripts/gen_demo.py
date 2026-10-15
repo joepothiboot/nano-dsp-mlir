@@ -77,11 +77,11 @@ def target_models():
     src = (ROOT / "lib" / "Schedule" / "TargetModel.cpp").read_text()
     pat = re.compile(
         r'\{"(?P<name>[\w-]+)",\s*(?P<bits>\d+),\s*(?P<regs>\d+),\s*'
-        r"(?P<cache>[\d *]+),\s*(?P<frac>[\d.]+)")
+        r"(?P<cache>[\w *]+),\s*(?P<frac>[\d.]+)")
     models = {}
 
     for m in pat.finditer(src):
-        cache = eval(m["cache"])
+        cache = eval(m["cache"], {"kKiB": 1024})
         models[m["name"]] = {
             "vectorBits": int(m["bits"]), "regs": int(m["regs"]),
             "lanes": int(m["bits"]) // 32, "cacheBytes": cache,

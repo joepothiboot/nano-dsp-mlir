@@ -13,6 +13,21 @@ unoptimized code bit for bit.
 Demo: https://joepothiboot.github.io/nano-dsp-mlir/ traces one matmul from the
 `dsp` dialect to NEON and AVX2 machine code.
 
+## Start here
+
+1. `brew install llvm ninja && pip3 install lit`, then `./test.sh`. This builds
+   `build/bin/nanodsp-opt` and runs the lit suite.
+2. Read [Pipeline](#pipeline) below, then run the [Usage](#usage) command on
+   `test/Integration/end-to-end.mlir`.
+3. The MN1 end-to-end tests in `test/MN1/` need an `mnpu-sim` built from
+   [mock-npu-bench](https://github.com/joepothiboot/mock-npu-bench), found
+   through `MNPU_SIM` or a sibling `mock-npu-bench/build/mnpu-sim`. Without
+   it lit reports them as unsupported, not failed.
+
+**Status: frozen, maintenance only.** This project is now a stable test bed
+for research on MLIR rewrite patterns. It gets fixes for broken builds and
+tests, not new features.
+
 ## Pipeline
 
 ```
